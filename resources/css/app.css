@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@theme {
+    --font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+    --color-primary:   #FF6D00;
+    --color-secondary: #FFB300;
+    --color-surface:   #1A1A1A;
+    --color-canvas:    #0D0D0D;
+    --color-muted:     #888888;
+}
+
+/* ── ChordPro Player ──────────────────────────────────── */
+.cp-content {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.925rem;
+    line-height: 1;
+}
+
+.cp-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    margin-bottom: 0.2em;
+}
+
+.cp-pair {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    white-space: pre;
+}
+
+.cp-chord {
+    color: #FF6D00;
+    font-weight: 700;
+    font-size: 0.82em;
+    min-height: 1.4em;
+    cursor: pointer;
+    user-select: none;
+    padding-right: 0.25em;
+    transition: color 0.1s;
+}
+.cp-chord:hover { color: #FFB300; }
+
+.cp-lyric {
+    color: #F5F5F5;
+    white-space: pre;
+    line-height: 1.65;
+}
+
+.cp-section      { margin-bottom: 1.75em; }
+.cp-section-label {
+    display: block;
+    color: #FF6D00;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.4em;
+    font-family: 'Outfit', sans-serif;
+}
+.cp-section-chorus .cp-lyric { font-weight: 600; }
+
+/* Font-size variants */
+.cp-font-sm .cp-content { font-size: 0.8rem; }
+.cp-font-md .cp-content { font-size: 0.925rem; }
+.cp-font-lg .cp-content { font-size: 1.05rem; }
+.cp-font-xl .cp-content { font-size: 1.22rem; }
+
+/* Focus mode: hide header/footer/song-meta-bar */
+.focus-mode #app-header,
+.focus-mode #app-footer,
+.focus-mode #song-meta-bar { display: none !important; }
+.focus-mode #app-main { padding-top: 0 !important; }

@@ -1,0 +1,46 @@
+<?php
+
+namespace App\Filament\Resources\ImportResource\Pages;
+
+use App\Filament\Resources\ImportResource;
+use Filament\Infolists;
+use Filament\Infolists\Infolist;
+use Filament\Resources\Pages\ViewRecord;
+
+class ViewImport extends ViewRecord
+{
+    protected static string $resource = ImportResource::class;
+
+    public function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist->schema([
+            Infolists\Components\Section::make('Resumo')->schema([
+                Infolists\Components\TextEntry::make('original_filename')->label('Arquivo'),
+                Infolists\Components\TextEntry::make('format')->label('Formato')->badge(),
+                Infolists\Components\TextEntry::make('status')->label('Status')->badge()
+                    ->color(fn ($state) => match($state) {
+                        'completed' => 'success',
+                        'failed' => 'danger',
+                        'processing' => 'warning',
+                        default => 'gray',
+                    }),
+                Infolists\Components\TextEntry::make('total_files')->label('Total de arquivos'),
+                Infolists\Components\TextEntry::make('imported_count')->label('Importados'),
+                Infolists\Components\TextEntry::make('failed_count')->label('Falhas'),
+                Infolists\Components\TextEntry::make('created_at')->label('Data')->dateTime('d/m/Y H:i'),
+            ])->columns(4),
+
+            Infolists\Components\Section::make('Log detalhado')->schema([
+                Infolists\Components\RepeatableEntry::make('log')
+                    ->label('')
+                    ->schema([
+                        Infolists\Components\TextEntry::make('file')->label('Arquivo'),
+                        Infolists\Components\TextEntry::make('status')->label('Status')->badge()
+                            ->color(fn ($state) => $state === 'ok' ? 'success' : 'danger'),
+                        Infolists\Components\TextEntry::make('title')->label('Título'),
+                        Infolists\Components\TextEntry::make('message')->label('Erro'),
+                    ])->columns(4),
+            ]),
+        ]);
+    }
+}
