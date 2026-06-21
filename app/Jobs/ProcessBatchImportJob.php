@@ -54,9 +54,9 @@ class ProcessBatchImportJob implements ShouldQueue
                 $format = $detector->detect($filePath);
                 $data   = $batchImporter->convertFile($filePath, $format);
 
-                $this->persistSong($data, $format, $metadata);
+                $enrichment = $this->persistSong($data, $format, $metadata);
 
-                $log[] = ['file' => $filename, 'status' => 'ok', 'title' => $data['title'] ?? null];
+                $log[] = array_merge(['file' => $filename, 'status' => 'ok'], $enrichment);
                 $importedCount++;
             } catch (\Throwable $e) {
                 $log[] = ['file' => $filename, 'status' => 'error', 'message' => $e->getMessage()];
@@ -74,7 +74,7 @@ class ProcessBatchImportJob implements ShouldQueue
         $batchImporter->cleanup($this->tempDir);
     }
 
-    private function persistSong(array $data, string $format, MusicMetadataService $metadata): void
+    private function persistSong(array $data, string $format, MusicMetadataService $metadata): array
     {
         // Prefer metadata from file; fall back to filename-derived values
         $title      = $data['title'] ?? $this->inferTitleFromFile($data);
@@ -171,6 +171,24 @@ class ProcessBatchImportJob implements ShouldQueue
         if (! empty($chordMatches[1])) {
             ChordDictionary::seedMissing(array_unique($chordMatches[1]));
         }
+
+        return [
+            'from_file' => array_filter([
+                'Título'  => $data['title']  ?? null,
+                'Artista' => $data['artist'] ?? null,
+                'Tom'     => $data['key']    ?? null,
+                'Ano'     => $data['year']   ?? null,
+                'Álbum'   => $data['album']  ?? null,
+            ]),
+            'from_api' => array_filter([
+                'Ano'           => $songMeta['year']            ?? null,
+                'Álbum'         => $songMeta['album']           ?? null,
+                'País (artista)'=> $artistMeta['country']       ?? null,
+                'Gênero'        => $artistMeta['genre']         ?? null,
+                'MBID música'   => $songMeta['musicbrainz_id']  ?? null,
+                'MBID artista'  => $artistMeta['musicbrainz_id']?? null,
+            ]),
+        ];
     }
 
     /**
