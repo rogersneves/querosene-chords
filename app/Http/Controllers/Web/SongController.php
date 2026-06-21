@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Web;
 use App\Http\Controllers\Controller;
 use App\Models\Song;
 use App\Services\ChordProRenderer;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\View\View;
 
 class SongController extends Controller
@@ -20,7 +22,8 @@ class SongController extends Controller
 
         $html = $content ? $renderer->render($content) : '';
 
-        $youtubeId = $this->extractYoutubeId($content);
+        $youtubeId    = $this->extractYoutubeId($content);
+        $youtubeRatio = $youtubeId ? $this->fetchYoutubeRatio($youtubeId) : '16/9';
 
         $suggestions = Song::where('is_published', true)
             ->where('id', '!=', $song->id)
@@ -33,7 +36,32 @@ class SongController extends Controller
             ->limit(4)
             ->get();
 
-        return view('song.show', compact('song', 'html', 'suggestions', 'youtubeId'));
+        return view('song.show', compact('song', 'html', 'suggestions', 'youtubeId', 'youtubeRatio'));
+    }
+
+    private function fetchYoutubeRatio(string $youtubeId): string
+    {
+        return Cache::remember("yt_ratio_{$youtubeId}", now()->addDays(7), function () use ($youtubeId) {
+            try {
+                $response = Http::timeout(5)->get('https://www.youtube.com/oembed', [
+                    'url'    => "https://www.youtube.com/watch?v={$youtubeId}",
+                    'format' => 'json',
+                ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    $w = (int) ($data['width']  ?? 16);
+                    $h = (int) ($data['height'] ?? 9);
+                    if ($w > 0 && $h > 0) {
+                        return "{$w}/{$h}";
+                    }
+                }
+            } catch (\Throwable) {
+                // silently fall through to default
+            }
+
+            return '16/9';
+        });
     }
 
     private function extractYoutubeId(string $content): ?string

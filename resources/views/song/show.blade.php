@@ -21,6 +21,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
         songSlug: '{{ $song->slug }}'
     })"
     x-init="init()"
+    @close-video.window="videoOpen = false"
 >
 
     {{-- ── Meta da música ───────────────────────────────────────────────── --}}
@@ -192,43 +193,104 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
 {{-- ── Player YouTube — componente isolado fora do x-data do player ── --}}
 @if($youtubeId ?? null)
 <div
-    x-data="{ open: false, src: 'about:blank' }"
-    @open-video.window="src = $event.detail.src; open = true"
+    x-data="{
+        open: false,
+        src: 'about:blank',
+        px: 0, py: 0, w: 320,
+        startDrag(e) {
+            e.preventDefault();
+            const p = e.touches ? e.touches[0] : e;
+            const ox = p.clientX - this.px, oy = p.clientY - this.py;
+            const onMove = ev => {
+                const t = ev.touches ? ev.touches[0] : ev;
+                this.px = Math.max(0, Math.min(window.innerWidth  - this.w, t.clientX - ox));
+                this.py = Math.max(0, Math.min(window.innerHeight -  48,    t.clientY - oy));
+            };
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup',   onUp);
+                window.removeEventListener('touchmove', onMove);
+                window.removeEventListener('touchend',  onUp);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup',   onUp);
+            window.addEventListener('touchmove', onMove, { passive: false });
+            window.addEventListener('touchend',  onUp);
+        },
+        startResize(e) {
+            e.preventDefault();
+            const startW = this.w, startX = e.clientX;
+            const onMove = ev => {
+                this.w = Math.max(240, Math.min(640, startW + (ev.clientX - startX)));
+                this.px = Math.min(this.px, window.innerWidth - this.w);
+            };
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup',   onUp);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup',   onUp);
+        }
+    }"
+    @open-video.window="w = 320; px = window.innerWidth - 340; py = window.innerHeight - Math.round(320 / ({{ $youtubeRatio }}) + 36 + 20); src = $event.detail.src; open = true"
     @close-video.window="open = false; $nextTick(() => src = 'about:blank')"
-    style="position:fixed; bottom:20px; right:16px; z-index:9999; width:320px; pointer-events:none"
+    :style="`position:fixed; left:${px}px; top:${py}px; z-index:9999; width:${w}px; pointer-events:none`"
 >
     <template x-if="open">
-        <div style="pointer-events:auto; border-radius:12px; overflow:hidden;
-                    box-shadow:0 25px 50px -5px rgba(0,0,0,.8);
-                    border:1px solid rgba(255,255,255,.1);
-                    background:#0d0d0d">
-            <div style="display:flex; align-items:center; justify-content:space-between;
-                        background:#111; padding:6px 12px; gap:8px">
-                <span style="font-size:11px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">
-                    <svg style="display:inline; width:12px; height:12px; margin-right:4px; color:#ef4444; vertical-align:middle" viewBox="0 0 24 24" fill="#ef4444"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg>
-                    {{ $song->title }} — {{ $song->artist->name }}
-                </span>
-                <button
-                    @click="$dispatch('close-video')"
-                    style="flex-shrink:0; width:20px; height:20px; display:flex; align-items:center;
-                           justify-content:center; border-radius:4px; background:transparent;
-                           border:none; cursor:pointer; color:#888"
-                    onmouseover="this.style.background='rgba(255,255,255,.1)'; this.style.color='#fff'"
-                    onmouseout="this.style.background='transparent'; this.style.color='#888'"
+        <div style="position:relative; pointer-events:auto">
+            {{-- Conteúdo do modal --}}
+            <div style="border-radius:12px; overflow:hidden;
+                        box-shadow:0 25px 50px -5px rgba(0,0,0,.8);
+                        border:1px solid rgba(255,255,255,.1); background:#0d0d0d">
+                {{-- Barra de título (área de drag) --}}
+                <div
+                    @mousedown="startDrag($event)"
+                    @touchstart.prevent="startDrag($event)"
+                    style="cursor:grab; display:flex; align-items:center; justify-content:space-between;
+                           background:#111; padding:6px 12px; gap:8px; user-select:none"
                 >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
+                    <span style="font-size:11px; color:#888; white-space:nowrap; overflow:hidden;
+                                 text-overflow:ellipsis; flex:1; min-width:0">
+                        <svg style="display:inline; width:12px; height:12px; margin-right:4px; vertical-align:middle" viewBox="0 0 24 24" fill="#ef4444"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg>
+                        {{ $song->title }} — {{ $song->artist->name }}
+                    </span>
+                    <button
+                        @click.stop="$dispatch('close-video')"
+                        @mousedown.stop
+                        style="flex-shrink:0; width:20px; height:20px; display:flex; align-items:center;
+                               justify-content:center; border-radius:4px; border:none;
+                               cursor:pointer; background:transparent; color:#888"
+                        onmouseover="this.style.background='rgba(255,255,255,.1)';this.style.color='#fff'"
+                        onmouseout="this.style.background='transparent';this.style.color='#888'"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+                {{-- Vídeo --}}
+                <div style="aspect-ratio:{{ $youtubeRatio }}; background:#000">
+                    <iframe
+                        :src="src"
+                        width="100%" height="100%"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowfullscreen
+                        style="display:block; border:0"
+                    ></iframe>
+                </div>
             </div>
-            <div style="aspect-ratio:16/9; background:#000">
-                <iframe
-                    :src="src"
-                    width="100%" height="100%"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowfullscreen
-                    style="display:block; border:0"
-                ></iframe>
+            {{-- Alça de redimensionamento (canto inferior direito) --}}
+            <div
+                @mousedown.stop="startResize($event)"
+                style="position:absolute; bottom:0; right:0; width:20px; height:20px;
+                       cursor:se-resize; display:flex; align-items:flex-end;
+                       justify-content:flex-end; padding:4px; border-radius:0 0 12px 0"
+            >
+                <svg width="10" height="10" viewBox="0 0 10 10" style="display:block">
+                    <line x1="2" y1="10" x2="10" y2="2" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-linecap="round"/>
+                    <line x1="5" y1="10" x2="10" y2="5" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-linecap="round"/>
+                    <line x1="8" y1="10" x2="10" y2="8" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
             </div>
         </div>
     </template>
@@ -321,7 +383,12 @@ function songPlayer({ originalKey, songSlug }) {
             this.stopScroll();
             if (this.scrollSpeed === 0) { this.scrolling = false; return; }
             const pxPerTick = this.scrollSpeed * 0.4;
-            this.scrollTimer = setInterval(() => window.scrollBy(0, pxPerTick), 50);
+            let remainder = 0;
+            this.scrollTimer = setInterval(() => {
+                remainder += pxPerTick;
+                const px = Math.floor(remainder);
+                if (px > 0) { window.scrollBy(0, px); remainder -= px; }
+            }, 50);
         },
 
         restartScroll() {
