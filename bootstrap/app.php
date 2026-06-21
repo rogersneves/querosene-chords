@@ -19,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->throttleApi('60,1');
+
+        $middleware->web(append: [
+            \App\Http\Middleware\SetLocale::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

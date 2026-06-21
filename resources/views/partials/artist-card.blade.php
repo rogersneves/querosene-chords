@@ -9,6 +9,8 @@
     </div>
     <p class="text-sm font-bold text-[#F5F5F5] group-hover:text-primary transition-colors leading-tight">{{ $artist->name }}</p>
     @if(isset($artist->songs_count))
-    <p class="text-xs text-muted mt-0.5">{{ $artist->songs_count }} {{ $artist->songs_count === 1 ? 'cifra' : 'cifras' }}</p>
+    <p class="text-xs text-muted mt-0.5">
+        {{ trans_choice('ui.artist.count', $artist->songs_count, ['count' => $artist->songs_count]) }}
+    </p>
     @endif
 </a>

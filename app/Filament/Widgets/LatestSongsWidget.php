@@ -9,6 +9,7 @@ use Filament\Widgets\TableWidget as BaseWidget;
 
 class LatestSongsWidget extends BaseWidget
 {
+    protected static ?int $sort = 2;
     protected static ?string $heading = 'Últimas músicas adicionadas';
     protected int|string|array $columnSpan = 'full';
 

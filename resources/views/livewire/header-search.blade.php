@@ -6,7 +6,7 @@
         <input
             wire:model.live.debounce.300ms="query"
             type="search"
-            placeholder="Buscar cifras e artistas…"
+            placeholder="{{ __('ui.search.header_placeholder') }}"
             autocomplete="off"
             class="w-full bg-[#0D0D0D] border border-white/10 rounded-xl pl-9 pr-9 py-2 text-sm text-[#F5F5F5] placeholder-muted focus:outline-none focus:border-primary/60 transition-colors"
         >
@@ -14,7 +14,7 @@
         <button
             wire:click="clear"
             class="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-[#F5F5F5] transition-colors"
-            aria-label="Limpar"
+            aria-label="{{ __('ui.search.clear') }}"
         >
             <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/>
@@ -50,7 +50,7 @@
             wire:click="clear"
             class="flex items-center justify-center gap-1.5 px-4 py-2.5 border-t border-white/5 text-xs text-primary hover:bg-white/5 transition-colors"
         >
-            Ver todos os resultados para <strong>"{{ $query }}"</strong>
+            {{ __('ui.search.view_all', ['query' => $query]) }}
         </a>
     </div>
     @endif

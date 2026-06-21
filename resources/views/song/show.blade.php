@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('title', $song->title . ' — ' . $song->artist->name)
-@section('description', 'Cifra de ' . $song->title . ' de ' . $song->artist->name . '. Aprenda a tocar agora no Querosene Chords.')
+@section('description', __('ui.song.meta_description', ['title' => $song->title, 'artist' => $song->artist->name]))
 
 @push('head')
 <meta property="og:type" content="music.song">
@@ -51,10 +51,13 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                         {{ $song->category->name }}
                     </span>
                     @endif
-                    @php $diffColors = ['iniciante'=>'#22c55e','intermediário'=>'#f59e0b','avançado'=>'#ef4444']; @endphp
+                    @php
+                        $diffColors = ['iniciante'=>'#22c55e','intermediário'=>'#f59e0b','avançado'=>'#ef4444'];
+                        $diffKeys   = ['iniciante'=>'beginner','intermediário'=>'intermediate','avançado'=>'advanced'];
+                    @endphp
                     <span class="rounded-lg px-2.5 py-1 text-xs font-semibold"
                           style="background:{{ ($diffColors[$song->difficulty]??'#888') }}22;color:{{ $diffColors[$song->difficulty]??'#888' }}">
-                        {{ ucfirst($song->difficulty) }}
+                        {{ __('ui.difficulty.' . ($diffKeys[$song->difficulty] ?? 'beginner')) }}
                     </span>
                     @if($song->bpm)
                     <span class="text-xs text-muted bg-white/5 rounded-lg px-2.5 py-1">{{ $song->bpm }} BPM</span>
@@ -65,7 +68,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
             {{-- Versões disponíveis --}}
             @if($song->chords->count() > 1)
             <div class="flex items-center gap-2 mt-3">
-                <span class="text-xs text-muted">Versão:</span>
+                <span class="text-xs text-muted">{{ __('ui.song.version_label') }}</span>
                 @foreach($song->chords as $chord)
                 <a href="{{ route('songs.show', $song) }}?versao={{ $chord->id }}"
                    class="text-xs rounded px-2 py-1 border transition-colors
@@ -84,11 +87,11 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
 
             {{-- Transposição --}}
             <div class="flex items-center gap-2">
-                <span class="text-xs text-muted uppercase tracking-wider">Tom</span>
+                <span class="text-xs text-muted uppercase tracking-wider">{{ __('ui.song.key_label') }}</span>
                 <button @click="transpose(-1)" class="w-7 h-7 flex items-center justify-center rounded-lg bg-surface hover:bg-white/10 text-[#F5F5F5] transition-colors text-base font-bold">−</button>
                 <span class="w-10 text-center font-mono font-bold text-primary text-sm" x-text="displayKey"></span>
                 <button @click="transpose(+1)" class="w-7 h-7 flex items-center justify-center rounded-lg bg-surface hover:bg-white/10 text-[#F5F5F5] transition-colors text-base font-bold">+</button>
-                <button x-show="semitones !== 0" @click="resetTranspose()" class="text-xs text-muted hover:text-primary transition-colors ml-1">reset</button>
+                <button x-show="semitones !== 0" @click="resetTranspose()" class="text-xs text-muted hover:text-primary transition-colors ml-1">{{ __('ui.song.reset') }}</button>
             </div>
 
             {{-- Tamanho da fonte --}}
@@ -104,7 +107,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 <button @click="toggleScroll()"
                         :class="scrolling ? 'text-primary' : 'text-muted'"
                         class="w-7 h-7 flex items-center justify-center rounded-lg bg-surface hover:bg-white/10 transition-colors"
-                        :title="scrolling ? 'Pausar' : 'Auto-scroll'">
+                        :title="scrolling ? '{{ __('ui.song.pause') }}' : '{{ __('ui.song.autoscroll') }}'"
                     <svg x-show="!scrolling" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                     <svg x-show="scrolling" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
                 </button>
@@ -112,7 +115,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                     type="range" min="0" max="10" x-model.number="scrollSpeed"
                     @change="scrolling && restartScroll()"
                     class="w-20 accent-primary h-1 cursor-pointer"
-                    title="Velocidade do scroll"
+                    title="{{ __('ui.song.scroll_speed') }}"
                 >
                 <span class="text-xs text-muted w-4 text-right" x-text="scrollSpeed"></span>
             </div>
@@ -122,9 +125,9 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
             <button @click="videoOpen ? closeVideo() : openVideo()"
                     :class="videoOpen ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
                     class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                    title="Assistir vídeo">
+                    title="{{ __('ui.song.video_title') }}">
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg>
-                Vídeo
+                {{ __('ui.song.video') }}
             </button>
             @endif
 
@@ -133,7 +136,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                     :class="focusMode ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
                     class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors ml-auto">
                 <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h7v2H5v5H3V3zm11 0h7v7h-2V5h-5V3zM3 14h2v5h5v2H3v-7zm16 5h-5v2h7v-7h-2v5z"/></svg>
-                Foco
+                {{ __('ui.song.focus') }}
             </button>
         </div>
     </div>
@@ -147,7 +150,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
             </div>
         </div>
         @else
-        <p class="text-muted">Cifra não disponível.</p>
+        <p class="text-muted">{{ __('ui.song.not_available') }}</p>
         @endif
 
         {{-- Diagrama popup --}}
@@ -178,7 +181,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
     @if($suggestions->isNotEmpty())
     <div class="border-t border-white/5 bg-surface/50 py-10 px-4">
         <div class="max-w-3xl mx-auto">
-            <h2 class="text-base font-black mb-4 text-muted uppercase tracking-wider text-xs">Você também pode gostar</h2>
+            <h2 class="text-base font-black mb-4 text-muted uppercase tracking-wider text-xs">{{ __('ui.song.you_might_like') }}</h2>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 @foreach($suggestions as $s)
                 @include('partials.song-card', ['song' => $s])
@@ -197,8 +200,11 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
         open: false,
         src: 'about:blank',
         px: 0, py: 0, w: 320,
+        ratio: ({{ $youtubeRatio }}),
+        busy: false,
         startDrag(e) {
             e.preventDefault();
+            this.busy = true;
             const p = e.touches ? e.touches[0] : e;
             const ox = p.clientX - this.px, oy = p.clientY - this.py;
             const onMove = ev => {
@@ -207,6 +213,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 this.py = Math.max(0, Math.min(window.innerHeight -  48,    t.clientY - oy));
             };
             const onUp = () => {
+                this.busy = false;
                 window.removeEventListener('mousemove', onMove);
                 window.removeEventListener('mouseup',   onUp);
                 window.removeEventListener('touchmove', onMove);
@@ -219,12 +226,35 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
         },
         startResize(e) {
             e.preventDefault();
+            this.busy = true;
             const startW = this.w, startX = e.clientX;
             const onMove = ev => {
                 this.w = Math.max(240, Math.min(640, startW + (ev.clientX - startX)));
                 this.px = Math.min(this.px, window.innerWidth - this.w);
             };
             const onUp = () => {
+                this.busy = false;
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup',   onUp);
+            };
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup',   onUp);
+        },
+        startResizeLeft(e) {
+            e.preventDefault();
+            this.busy = true;
+            const startW = this.w, startX = e.clientX;
+            const rightEdge  = this.px + this.w;
+            const bottomEdge = this.py + Math.round(this.w / this.ratio) + 36;
+            const onMove = ev => {
+                const newW  = Math.max(240, Math.min(640, startW - (ev.clientX - startX)));
+                const newH  = Math.round(newW / this.ratio) + 36;
+                this.w  = newW;
+                this.px = Math.max(0, rightEdge  - newW);
+                this.py = Math.max(0, bottomEdge - newH);
+            };
+            const onUp = () => {
+                this.busy = false;
                 window.removeEventListener('mousemove', onMove);
                 window.removeEventListener('mouseup',   onUp);
             };
@@ -269,7 +299,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                     </button>
                 </div>
                 {{-- Vídeo --}}
-                <div style="aspect-ratio:{{ $youtubeRatio }}; background:#000">
+                <div style="aspect-ratio:{{ $youtubeRatio }}; background:#000; position:relative">
                     <iframe
                         :src="src"
                         width="100%" height="100%"
@@ -277,9 +307,24 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                         allowfullscreen
                         style="display:block; border:0"
                     ></iframe>
+                    {{-- Overlay: bloqueia o iframe durante drag/resize para o mouseup não sumir --}}
+                    <div x-show="busy" style="position:absolute; inset:0; z-index:1"></div>
                 </div>
             </div>
-            {{-- Alça de redimensionamento (canto inferior direito) --}}
+            {{-- Alça superior-esquerda (NW) --}}
+            <div
+                @mousedown.stop="startResizeLeft($event)"
+                style="position:absolute; top:0; left:0; width:20px; height:20px;
+                       cursor:nw-resize; display:flex; align-items:flex-start;
+                       justify-content:flex-start; padding:4px; border-radius:12px 0 0 0"
+            >
+                <svg width="10" height="10" viewBox="0 0 10 10" style="display:block; transform:rotate(180deg)">
+                    <line x1="2" y1="10" x2="10" y2="2" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-linecap="round"/>
+                    <line x1="5" y1="10" x2="10" y2="5" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-linecap="round"/>
+                    <line x1="8" y1="10" x2="10" y2="8" stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+            </div>
+            {{-- Alça inferior-direita (SE) --}}
             <div
                 @mousedown.stop="startResize($event)"
                 style="position:absolute; bottom:0; right:0; width:20px; height:20px;

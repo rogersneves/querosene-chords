@@ -1,7 +1,10 @@
 @extends('layouts.app')
 
 @section('title', $artist->name)
-@section('description', 'Cifras de ' . $artist->name . '. ' . ($artist->bio ? strip_tags(substr($artist->bio, 0, 120)) . '…' : 'Confira todas as músicas.'))
+@section('description', __('ui.artist.meta_description', [
+    'name' => $artist->name,
+    'bio'  => $artist->bio ? strip_tags(substr($artist->bio, 0, 120)) . '…' : __('ui.artist.bio_fallback'),
+]))
 
 @section('content')
 <div class="max-w-7xl mx-auto px-4 py-8">
@@ -24,7 +27,7 @@
                 @if($artist->country)
                 <span>{{ $artist->country }}</span>
                 @endif
-                <span>{{ $songs->total() }} {{ $songs->total() === 1 ? 'cifra' : 'cifras' }}</span>
+                <span>{{ trans_choice('ui.artist.count', $songs->total(), ['count' => $songs->total()]) }}</span>
             </div>
             @if($artist->bio)
             <p class="mt-3 text-sm text-muted max-w-2xl leading-relaxed line-clamp-4">{{ strip_tags($artist->bio) }}</p>
@@ -33,9 +36,9 @@
     </div>
 
     {{-- Grid de músicas --}}
-    <h2 class="text-lg font-black mb-4">Todas as cifras</h2>
+    <h2 class="text-lg font-black mb-4">{{ __('ui.artist.all_chords') }}</h2>
     @if($songs->isEmpty())
-    <p class="text-muted">Nenhuma cifra disponível ainda.</p>
+    <p class="text-muted">{{ __('ui.artist.no_chords') }}</p>
     @else
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
         @foreach($songs as $song)

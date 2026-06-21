@@ -11,12 +11,13 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 
 class StatsOverviewWidget extends BaseWidget
 {
+    protected static ?int $sort = 1;
     protected function getStats(): array
     {
         return [
             Stat::make('Músicas', Song::count())
                 ->description(Song::where('is_published', true)->count() . ' publicadas')
-                ->icon('heroicon-o-document-music')
+                ->icon('heroicon-o-queue-list')
                 ->color('primary'),
 
             Stat::make('Artistas', Artist::count())

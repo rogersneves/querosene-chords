@@ -9,6 +9,7 @@ use Filament\Widgets\TableWidget as BaseWidget;
 
 class PopularSongsWidget extends BaseWidget
 {
+    protected static ?int $sort = 3;
     protected static ?string $heading = 'Top 10 mais acessadas';
     protected int|string|array $columnSpan = 'full';
 

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\LocaleController;
 use App\Http\Controllers\Web\ArtistController;
 use App\Http\Controllers\Web\CategoryController;
 use App\Http\Controllers\Web\SitemapController;
@@ -14,3 +15,4 @@ Route::get('/artistas/{artist:slug}', [ArtistController::class, 'show'])->name('
 Route::get('/cifras/{song:slug}', [WebSongController::class, 'show'])->name('songs.show');
 Route::get('/categorias/{category:slug}', [CategoryController::class, 'show'])->name('categories.show');
 Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
+Route::get('/lang/{locale}', [LocaleController::class, 'set'])->name('locale.set')->where('locale', 'pt|en|es|fr');

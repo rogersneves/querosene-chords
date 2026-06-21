@@ -9,6 +9,7 @@ use Filament\Widgets\TableWidget as BaseWidget;
 
 class LatestImportsWidget extends BaseWidget
 {
+    protected static ?int $sort = 4;
     protected static ?string $heading = 'Últimas importações';
     protected int|string|array $columnSpan = 'full';
 

@@ -1,14 +1,15 @@
+@php $htmlLocale = ['pt' => 'pt-BR', 'en' => 'en', 'es' => 'es', 'fr' => 'fr'][app()->getLocale()] ?? 'pt-BR'; @endphp
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="{{ $htmlLocale }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0D0D0D">
-    <title>@yield('title', 'Querosene Chords') — Dê um gás na sua música</title>
-    <meta name="description" content="@yield('description', 'As melhores cifras do Brasil. Dê um gás na sua música com Querosene Chords.')">
+    <title>@yield('title', 'Querosene Chords') — {{ __('ui.app.tagline') }}</title>
+    <meta name="description" content="@yield('description', __('ui.app.description'))">
     <meta property="og:site_name" content="Querosene Chords">
     <meta property="og:title" content="@yield('title', 'Querosene Chords')">
-    <meta property="og:description" content="@yield('description', 'Dê um gás na sua música.')">
+    <meta property="og:description" content="@yield('description', __('ui.app.og_desc'))">
     <meta property="og:url" content="{{ url()->current() }}">
     <link rel="canonical" href="{{ url()->current() }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -48,7 +49,7 @@
                     @keydown.escape="open = false"
                     class="flex items-center gap-1 px-3 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors"
                 >
-                    Categorias
+                    {{ __('ui.nav.categories') }}
                     <svg class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': open }" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
                     </svg>
@@ -79,8 +80,49 @@
 
             <a href="{{ route('search') }}?tab=artists"
                class="px-3 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors">
-                Artistas
+                {{ __('ui.nav.artists') }}
             </a>
+
+            {{-- Seletor de idioma --}}
+            <div x-data="{ open: false }" class="relative">
+                <button
+                    @click="open = !open"
+                    @keydown.escape="open = false"
+                    class="flex items-center gap-1 px-2.5 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors text-xs font-medium"
+                >
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="2" y1="12" x2="22" y2="12"/>
+                        <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+                    </svg>
+                    {{ strtoupper(app()->getLocale()) }}
+                    <svg class="w-3 h-3 transition-transform" :class="{ 'rotate-180': open }" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/>
+                    </svg>
+                </button>
+                <div
+                    x-show="open"
+                    x-transition:enter="transition ease-out duration-100"
+                    x-transition:enter-start="opacity-0 scale-95"
+                    x-transition:enter-end="opacity-100 scale-100"
+                    x-transition:leave="transition ease-in duration-75"
+                    x-transition:leave-start="opacity-100 scale-100"
+                    x-transition:leave-end="opacity-0 scale-95"
+                    @click.outside="open = false"
+                    class="absolute right-0 top-full mt-1 w-36 bg-surface border border-white/10 rounded-xl shadow-xl overflow-hidden"
+                >
+                    @foreach(['pt' => 'Português', 'en' => 'English', 'es' => 'Español', 'fr' => 'Français'] as $code => $name)
+                    <a
+                        href="{{ route('locale.set', $code) }}"
+                        @click="open = false"
+                        class="flex items-center gap-2 px-4 py-2.5 text-sm transition-colors
+                            {{ app()->getLocale() === $code ? 'text-primary bg-primary/10' : 'text-[#F5F5F5] hover:bg-white/5' }}"
+                    >
+                        {{ $name }}
+                    </a>
+                    @endforeach
+                </div>
+            </div>
         </nav>
     </div>
 </header>
@@ -105,17 +147,27 @@
                     </svg>
                     <span class="font-black text-[#F5F5F5]">Querosene <span class="text-primary">Chords</span></span>
                 </div>
-                <p class="text-muted text-xs">Dê um gás na sua música</p>
+                <p class="text-muted text-xs">{{ __('ui.app.tagline') }}</p>
+                {{-- Seletor de idioma (mobile) --}}
+                <div class="flex gap-2 mt-2 md:hidden">
+                    @foreach(['pt' => 'PT', 'en' => 'EN', 'es' => 'ES', 'fr' => 'FR'] as $code => $label)
+                    <a href="{{ route('locale.set', $code) }}"
+                       class="text-xs px-2 py-1 rounded transition-colors
+                           {{ app()->getLocale() === $code ? 'text-primary font-bold' : 'text-muted hover:text-[#F5F5F5]' }}">
+                        {{ $label }}
+                    </a>
+                    @endforeach
+                </div>
             </div>
             <nav class="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted">
-                <a href="#" class="hover:text-[#F5F5F5] transition-colors">Sobre</a>
-                <a href="#" class="hover:text-[#F5F5F5] transition-colors">Contato</a>
-                <a href="#" class="hover:text-[#F5F5F5] transition-colors">Privacidade</a>
-                <a href="{{ route('sitemap') }}" class="hover:text-[#F5F5F5] transition-colors">Sitemap</a>
+                <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.about') }}</a>
+                <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.contact') }}</a>
+                <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.privacy') }}</a>
+                <a href="{{ route('sitemap') }}" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.sitemap') }}</a>
             </nav>
         </div>
         <p class="text-center text-muted text-xs mt-6">
-            &copy; {{ date('Y') }} Querosene Chords. Todos os direitos reservados.
+            &copy; {{ date('Y') }} Querosene Chords. {{ __('ui.footer.copyright') }}
         </p>
     </div>
 </footer>
