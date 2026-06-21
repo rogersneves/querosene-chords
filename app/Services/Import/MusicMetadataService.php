@@ -25,11 +25,15 @@ class MusicMetadataService
             return [];
         }
 
-        return Cache::remember(
-            'mb_artist_' . md5(mb_strtolower($name)),
-            now()->addDays(7),
-            fn () => $this->fetchArtist($name) ?? []
-        );
+        $cacheKey = 'mb_artist_' . md5(mb_strtolower($name));
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
+        $result = $this->fetchArtist($name) ?? [];
+        if (! empty($result)) {
+            Cache::put($cacheKey, $result, now()->addDays(7));
+        }
+        return $result;
     }
 
     /**
@@ -42,11 +46,15 @@ class MusicMetadataService
             return [];
         }
 
-        return Cache::remember(
-            'mb_recording_' . md5(mb_strtolower("{$artistName}:{$title}")),
-            now()->addDays(7),
-            fn () => $this->fetchRecording($title, $artistName) ?? []
-        );
+        $cacheKey = 'mb_recording_' . md5(mb_strtolower("{$artistName}:{$title}"));
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
+        $result = $this->fetchRecording($title, $artistName) ?? [];
+        if (! empty($result)) {
+            Cache::put($cacheKey, $result, now()->addDays(7));
+        }
+        return $result;
     }
 
     // ─── Private: Artist ───────────────────────────────────────────────────────

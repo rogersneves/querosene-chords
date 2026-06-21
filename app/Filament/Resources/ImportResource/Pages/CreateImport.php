@@ -42,16 +42,6 @@ class CreateImport extends Page
                 Forms\Components\FileUpload::make('file')
                     ->label('Arquivo')
                     ->required()
-                    ->acceptedFileTypes([
-                        'text/plain',
-                        'application/zip',
-                        'application/x-zip-compressed',
-                        'application/octet-stream',
-                        // ChordPro extensions (.pro, .cho, .crd, .chordpro)
-                        '.pro', '.cho', '.crd', '.chordpro',
-                        // MusicXML
-                        'application/xml', 'text/xml', '.mxl', '.musicxml',
-                    ])
                     ->maxSize(50 * 1024)
                     ->disk('local')
                     ->directory('temp/uploads'),

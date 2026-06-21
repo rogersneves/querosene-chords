@@ -92,6 +92,12 @@ class SongResource extends Resource
                         ->label('Álbum')
                         ->maxLength(255),
 
+                    Forms\Components\TextInput::make('youtube_id')
+                        ->label('YouTube ID')
+                        ->maxLength(20)
+                        ->placeholder('ex: vWPQQbldFjw')
+                        ->helperText('ID de 11 caracteres da URL youtube.com/watch?v=...'),
+
                     Forms\Components\Toggle::make('is_published')
                         ->label('Publicado')
                         ->default(true),

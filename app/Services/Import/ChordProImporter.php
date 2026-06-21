@@ -25,10 +25,16 @@ class ChordProImporter
             throw new \InvalidArgumentException('O arquivo não parece ser um ChordPro válido.');
         }
 
+        $youtubeId = $this->extractYoutubeId($content);
+        if ($youtubeId) {
+            $content = $this->stripYoutubeLines($content);
+        }
+
         return [
             'title'       => $this->extractMeta($content, 'title'),
             'artist'      => $this->extractMeta($content, 'artist'),
             'key'         => $this->extractMeta($content, 'key'),
+            'youtube_id'  => $youtubeId,
             'content'     => $content,
             'tab_content' => null,
         ];
@@ -58,6 +64,28 @@ class ChordProImporter
         // Has at least one recognized directive OR inline chord bracket
         return preg_match('/\{(?:' . implode('|', array_values(self::ALIASES)) . '):/i', $content) === 1
             || preg_match('/\[[A-G][#b]?/i', $content) === 1;
+    }
+
+    private function extractYoutubeId(string $content): ?string
+    {
+        if (preg_match(
+            '/https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?(?:[^\s]*&)*v=([\w-]{11})|youtu\.be\/([\w-]{11}))/',
+            $content,
+            $m
+        )) {
+            return $m[1] ?: $m[2];
+        }
+        return null;
+    }
+
+    private function stripYoutubeLines(string $content): string
+    {
+        // Remove lines whose only meaningful content is a YouTube URL (optionally preceded by text and a dash)
+        return preg_replace(
+            '/^[^\n]*https?:\/\/(?:www\.)?(?:youtube\.com\/watch\?[^\s\n]+|youtu\.be\/[\w-]+)[^\n]*\n?/m',
+            '',
+            $content
+        );
     }
 
     private function extractMeta(string $content, string $field): ?string

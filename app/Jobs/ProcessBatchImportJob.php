@@ -76,9 +76,12 @@ class ProcessBatchImportJob implements ShouldQueue
 
     private function persistSong(array $data, string $format, MusicMetadataService $metadata): array
     {
-        // Prefer metadata from file; fall back to filename-derived values
-        $title      = $data['title'] ?? $this->inferTitleFromFile($data);
-        $artistName = $data['artist'] ?? null;
+        // Prefer metadata from file; try to extract from content as fallback before filename
+        $title      = $data['title']
+            ?? $this->extractTitleFromContent($data['content'] ?? '')
+            ?? $this->inferTitleFromFile($data);
+        $artistName = $data['artist']
+            ?? $this->extractArtistFromContent($data['content'] ?? '');
 
         $slug     = Str::slug($title);
         $existing = Song::where('slug', $slug)->first();
@@ -144,6 +147,7 @@ class ProcessBatchImportJob implements ShouldQueue
             'year'           => $songMeta['year']  ?? ($data['year']  ?? null),
             'album'          => $songMeta['album'] ?? ($data['album'] ?? null),
             'musicbrainz_id' => $songMeta['musicbrainz_id'] ?? null,
+            'youtube_id'     => $data['youtube_id'] ?? null,
             'is_published'   => $this->publishByDefault,
         ];
 
@@ -174,11 +178,12 @@ class ProcessBatchImportJob implements ShouldQueue
 
         return [
             'from_file' => array_filter([
-                'Título'  => $data['title']  ?? null,
-                'Artista' => $data['artist'] ?? null,
-                'Tom'     => $data['key']    ?? null,
-                'Ano'     => $data['year']   ?? null,
-                'Álbum'   => $data['album']  ?? null,
+                'Título'    => $data['title']      ?? null,
+                'Artista'   => $data['artist']     ?? null,
+                'Tom'       => $data['key']        ?? null,
+                'Ano'       => $data['year']       ?? null,
+                'Álbum'     => $data['album']      ?? null,
+                'YouTube'   => $data['youtube_id'] ?? null,
             ]),
             'from_api' => array_filter([
                 'Ano'           => $songMeta['year']            ?? null,
@@ -189,6 +194,24 @@ class ProcessBatchImportJob implements ShouldQueue
                 'MBID artista'  => $artistMeta['musicbrainz_id']?? null,
             ]),
         ];
+    }
+
+    private function extractTitleFromContent(string $content): ?string
+    {
+        if (preg_match('/\{(?:title|t|song|name):\s*([^}]+)\}/iu', $content, $m)) {
+            $v = trim($m[1]);
+            return $v !== '' ? $v : null;
+        }
+        return null;
+    }
+
+    private function extractArtistFromContent(string $content): ?string
+    {
+        if (preg_match('/\{(?:artist|composer|lyricist|subtitle|st|by):\s*([^}]+)\}/iu', $content, $m)) {
+            $v = trim($m[1]);
+            return $v !== '' ? $v : null;
+        }
+        return null;
     }
 
     /**

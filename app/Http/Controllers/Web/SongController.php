@@ -22,7 +22,7 @@ class SongController extends Controller
 
         $html = $content ? $renderer->render($content) : '';
 
-        $youtubeId    = $this->extractYoutubeId($content);
+        $youtubeId    = $song->youtube_id ?? $this->extractYoutubeId($content);
         $youtubeRatio = $youtubeId ? $this->fetchYoutubeRatio($youtubeId) : '16/9';
 
         $suggestions = Song::where('is_published', true)

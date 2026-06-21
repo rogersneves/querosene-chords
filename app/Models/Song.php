@@ -15,7 +15,7 @@ class Song extends Model
 
     protected $fillable = [
         'artist_id', 'category_id', 'title', 'slug', 'key',
-        'difficulty', 'bpm', 'year', 'album', 'musicbrainz_id',
+        'difficulty', 'bpm', 'year', 'album', 'musicbrainz_id', 'youtube_id',
         'is_published', 'views',
     ];
 
