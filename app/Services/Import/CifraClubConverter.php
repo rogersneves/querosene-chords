@@ -15,13 +15,14 @@ class CifraClubConverter
         'verse' => 'verse',
         'primeira parte' => 'verse',
         'segunda parte' => 'verse',
+        'terceira parte' => 'verse',
         'pre-refrão' => 'pre-chorus',
         'pre-chorus' => 'pre-chorus',
         'refrão' => 'chorus',
         'chorus' => 'chorus',
         'ponte' => 'bridge',
         'bridge' => 'bridge',
-        'solo' => 'solo',
+        'solo' => 'tab',
         'outro' => 'outro',
         'final' => 'outro',
         'interlúdio' => 'bridge',
@@ -68,22 +69,37 @@ class CifraClubConverter
             $line = $lines[$i];
             $trimmed = trim($line);
 
-            // Tab block detection
+            // Separator lines: "------", "======", "--- Acordes ---"
+            if (preg_match('/^[-=_]{5,}$/', $trimmed) || preg_match('/^[-\s]*Acordes[-\s]*$/i', $trimmed)) {
+                $i++;
+                continue;
+            }
+
+            // Tab line: E|--- B|--- G|--- D|--- A|--- e|---
             if (preg_match('/^[EBGDAe]\|/', $trimmed)) {
+                // Auto-open a tab section when tab lines appear outside one
+                if ($currentSection !== 'tab') {
+                    if ($currentSection !== null) {
+                        $chordProLines[] = "{end_of_{$currentSection}}";
+                    }
+                    $currentSection = 'tab';
+                    $chordProLines[] = '{start_of_tab}';
+                }
                 $inTab = true;
+                $chordProLines[] = $trimmed;
                 $tabContent[] = $line;
                 $i++;
                 continue;
             }
 
-            if ($inTab && (empty($trimmed) || preg_match('/^[EBGDAe]\|/', $trimmed) || preg_match('/^\d+$/', $trimmed))) {
-                if (!empty($trimmed)) {
-                    $tabContent[] = $line;
+            // Within a tab block: skip blank lines and standalone fret numbers
+            if ($inTab) {
+                if (empty($trimmed) || preg_match('/^\d+$/', $trimmed)) {
+                    $i++;
+                    continue;
                 }
-                $i++;
-                continue;
+                $inTab = false;
             }
-            $inTab = false;
 
             // Chord dictionary at footer (Am7 = X 0 2 0 1 0)
             if (preg_match('/^([A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add)?[0-9]*)\s*=\s*([XxNn0-9\s]+)$/', $trimmed, $m)) {
@@ -92,16 +108,23 @@ class CifraClubConverter
                 continue;
             }
 
-            // Section markers [Intro], [Verso], etc.
+            // Section markers [Intro], [Verso], [Tab - Solo], etc.
             if (preg_match('/^\[(.+)\]$/', $trimmed, $m)) {
                 $sectionKey = mb_strtolower($m[1]);
-                $mapped = $this->sectionMap[$sectionKey] ?? 'verse';
+                $mapped = $this->sectionMap[$sectionKey] ?? $this->inferSectionType($sectionKey);
 
                 if ($currentSection !== null) {
                     $chordProLines[] = "{end_of_{$currentSection}}";
                 }
                 $currentSection = $mapped;
                 $chordProLines[] = "{start_of_{$mapped}: {$m[1]}}";
+                $i++;
+                continue;
+            }
+
+            // Sub-section part labels: "Parte 1 de 2", "Parte 2 de 2"
+            if (preg_match('/^Parte\s+\d+\s+de\s+\d+$/iu', $trimmed)) {
+                $chordProLines[] = "{c: {$trimmed}}";
                 $i++;
                 continue;
             }
@@ -159,7 +182,7 @@ class CifraClubConverter
 
     private function mergeChordAndLyric(string $chordLine, string $lyricLine): string
     {
-        preg_match_all('/([A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add|7|9|11|13)*(?:\/[A-G][#b]?)?)/', $chordLine, $matches, PREG_OFFSET_CAPTURE);
+        preg_match_all('/([A-G][#b]?(?:°|m(?:aj)?|M(?:aj)?|dim|aug|sus[24]?|add[0-9]*)?[0-9]*M?(?:\([^)]+\))?(?:\/[A-G][#b]?)?)/', $chordLine, $matches, PREG_OFFSET_CAPTURE);
 
         $lyric = rtrim($lyricLine);
         $offset = 0;
@@ -194,7 +217,7 @@ class CifraClubConverter
 
     private function extractChordsInline(string $chordLine, string $lyric): string
     {
-        preg_match_all('/([A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add|7|9|11|13)*(?:\/[A-G][#b]?)?)/', $chordLine, $matches);
+        preg_match_all('/([A-G][#b]?(?:°|m(?:aj)?|M(?:aj)?|dim|aug|sus[24]?|add[0-9]*)?[0-9]*M?(?:\([^)]+\))?(?:\/[A-G][#b]?)?)/', $chordLine, $matches);
         return implode(' ', array_map(fn($c) => "[{$c}]", $matches[1]));
     }
 
@@ -214,6 +237,20 @@ class CifraClubConverter
             'fingers' => null,
             'barre' => null,
         ];
+    }
+
+    private function inferSectionType(string $key): string
+    {
+        if (str_contains($key, 'tab') || str_contains($key, 'solo')) {
+            return 'tab';
+        }
+        if (str_contains($key, 'refr') || str_contains($key, 'chorus')) {
+            return 'chorus';
+        }
+        if (str_contains($key, 'ponte') || str_contains($key, 'bridge')) {
+            return 'bridge';
+        }
+        return 'verse';
     }
 
     private function buildHeader(string $title, string $artist, string $key): string

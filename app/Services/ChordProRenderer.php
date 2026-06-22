@@ -18,23 +18,24 @@ class ChordProRenderer
             if (preg_match('/^\{([^}]+)\}$/', $line, $m)) {
                 $directive = trim($m[1]);
 
-                if (preg_match('/^(start_of_verse|start_of_chorus|start_of_bridge|start_of_tab|start_of_grid)(?::\s*(.+))?$/i', $directive, $dm)) {
+                if (preg_match('/^start_of_(\w+)(?::\s*(.+))?$/i', $directive, $dm)) {
                     if ($inSection) {
                         $html .= "</div>\n";
                     }
 
-                    $type  = match (true) {
-                        str_contains(strtolower($dm[1]), 'chorus') => 'chorus',
-                        str_contains(strtolower($dm[1]), 'bridge') => 'bridge',
-                        str_contains(strtolower($dm[1]), 'tab')    => 'tab',
-                        default                                     => 'verse',
+                    $suffix = strtolower($dm[1]);
+                    $type   = match (true) {
+                        str_contains($suffix, 'chorus') => 'chorus',
+                        str_contains($suffix, 'bridge') => 'bridge',
+                        str_contains($suffix, 'tab') || str_contains($suffix, 'grid') => 'tab',
+                        default => 'verse',
                     };
 
                     $label = $dm[2] ?? match ($type) {
                         'chorus' => 'Refrão',
                         'bridge' => 'Ponte',
                         'tab'    => 'Tablatura',
-                        default  => 'Verso',
+                        default  => ucfirst($suffix),
                     };
 
                     $html .= "<div class=\"cp-section cp-section-{$type}\">\n";
@@ -51,6 +52,17 @@ class ChordProRenderer
                     continue;
                 }
 
+                // Comment directive {c: text} or {comment: text}
+                if (preg_match('/^(?:comment|c)(?::\s*(.*))?$/i', $directive, $cm)) {
+                    $comment = trim($cm[1] ?? '');
+                    if ($comment === '') {
+                        $html .= "<div class=\"cp-spacer\"></div>\n";
+                    } else {
+                        $html .= '<div class="cp-comment">' . $this->e($comment) . "</div>\n";
+                    }
+                    continue;
+                }
+
                 // Other directives (title, artist, key, capo…) — skip
                 continue;
             }
@@ -62,7 +74,33 @@ class ChordProRenderer
 
             // ── Empty line ────────────────────────────────────────────────────
             if (trim($line) === '') {
-                $html .= "<br>\n";
+                $html .= "<div class=\"cp-spacer\"></div>\n";
+                continue;
+            }
+
+            // ── Tablature block: E|--- B|--- G|--- D|--- A|--- E|--- ─────────
+            // Collect consecutive tab lines (and blank lines between two systems)
+            // into a single <pre> block.
+            if (preg_match('/^[EBGDAe]\|/', $line)) {
+                $tabLines = [];
+                while ($i < $count) {
+                    $tl = rtrim($lines[$i]);
+                    if (preg_match('/^[EBGDAe]\|/', $tl)) {
+                        $tabLines[] = $tl;
+                        $i++;
+                    } elseif (
+                        trim($tl) === '' &&
+                        isset($lines[$i + 1]) &&
+                        preg_match('/^[EBGDAe]\|/', rtrim($lines[$i + 1]))
+                    ) {
+                        $tabLines[] = '';
+                        $i++;
+                    } else {
+                        break;
+                    }
+                }
+                $i--; // for-loop increment will move past the last consumed line
+                $html .= '<pre class="cp-tab">' . $this->e(implode("\n", $tabLines)) . "</pre>\n";
                 continue;
             }
 
@@ -77,6 +115,16 @@ class ChordProRenderer
                     continue;
                 }
                 $html .= $this->renderChordOnlyLine($line);
+                continue;
+            }
+
+            // ── Annotation line: "Label: [Ch] [Ch] text" ─────────────────────
+            // Detects lines that start with a label ending in ":" followed by chords
+            // e.g. "Intro: [Am] [Dm] x 2" — renders chords inline instead of above
+            if (str_contains($line, '[') &&
+                preg_match('/^([^[\]{}]+:)\s*(.+)$/u', $line, $annm) &&
+                str_contains($annm[2], '[')) {
+                $html .= $this->renderAnnotationLine(rtrim($annm[1]), $annm[2]);
                 continue;
             }
 
@@ -137,7 +185,7 @@ class ChordProRenderer
         //   + optional trailing M (major — as in 7M)
         //   + optional bass note /X
         return (bool) preg_match(
-            '/^[A-G][#b]?(?:m(?:aj)?|M(?:aj)?|dim|aug|sus[24]?|add[0-9]*)?[0-9]*M?(?:\/[A-G][#b]?)?$/',
+            '/^[A-G][#b]?(?:°|m(?:aj)?|M(?:aj)?|dim|aug|sus[24]?|add[0-9]*)?[0-9]*M?(?:\([^)]+\))?(?:\/[A-G][#b]?)?$/u',
             $token
         );
     }
@@ -162,6 +210,28 @@ class ChordProRenderer
     }
 
     // ── ChordPro [bracket] line rendering ────────────────────────────────────
+
+    /** Renders "Intro: [Am] [Dm] x 2" as inline chord row with a label. */
+    private function renderAnnotationLine(string $label, string $rest): string
+    {
+        $html = '<div class="cp-line cp-annotation">'
+            . '<span class="cp-annotation-label">' . $this->e($label) . '</span>';
+
+        $parts = preg_split('/(\[[^\]]+\])/', $rest, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+        foreach ($parts as $part) {
+            if (preg_match('/^\[([^\]]+)\]$/', $part, $m)) {
+                $chord = $m[1];
+                $html .= '<span class="cp-chord" data-chord="' . $this->e($chord) . '">'
+                    . $this->e($chord) . '</span>';
+            } elseif (trim($part) !== '') {
+                $html .= '<span class="cp-annotation-suffix">' . $this->e(trim($part)) . '</span>';
+            }
+        }
+
+        $html .= "</div>\n";
+        return $html;
+    }
 
     private function renderLine(string $line): string
     {

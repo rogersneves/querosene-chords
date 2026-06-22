@@ -43,23 +43,13 @@ class ViewImport extends ViewRecord
                         Infolists\Components\TextEntry::make('message')->label('Erro')
                             ->hidden(fn ($state) => blank($state))
                             ->color('danger'),
-                        Infolists\Components\TextEntry::make('from_file')
+                        Infolists\Components\ViewEntry::make('from_file')
                             ->label('Do arquivo')
-                            ->html()
-                            ->formatStateUsing(fn ($state) =>
-                                is_array($state) && count($state)
-                                    ? collect($state)->map(fn ($v, $k) => '<b>' . e($k) . '</b>: ' . e($v))->join('<br>')
-                                    : null
-                            )
+                            ->view('filament.partials.kv-entry')
                             ->hidden(fn ($state) => empty($state)),
-                        Infolists\Components\TextEntry::make('from_api')
+                        Infolists\Components\ViewEntry::make('from_api')
                             ->label('MusicBrainz API')
-                            ->html()
-                            ->formatStateUsing(fn ($state) =>
-                                is_array($state) && count($state)
-                                    ? collect($state)->map(fn ($v, $k) => '<b>' . e($k) . '</b>: ' . e($v))->join('<br>')
-                                    : null
-                            )
+                            ->view('filament.partials.kv-entry')
                             ->hidden(fn ($state) => empty($state)),
                     ])->columns(2),
             ]),

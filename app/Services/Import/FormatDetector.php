@@ -82,9 +82,10 @@ class FormatDetector
             return false;
         }
 
-        return (bool) preg_match(
-            '/^(\s*[A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add|7|9|11|13)*(?:\/[A-G][#b]?)?\s+){1,}[A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add|7|9|11|13)*(?:\/[A-G][#b]?)?\s*$/',
-            $trimmed
-        );
+        // One chord token (no spaces) is enough for a chord line — handles "E", "Am", "F°", etc.
+        // Two-or-more pattern also accepts extended chords like "C#7(13-)/G#" and "F°"
+        $cp = '[A-G][#b]?(?:°|m(?:aj)?|M(?:aj)?|dim|aug|sus[24]?|add[0-9]*)?[0-9]*M?(?:\([^)]+\))?(?:\/[A-G][#b]?)?';
+        return (bool) preg_match('/^(\s*' . $cp . '\s+)+' . $cp . '\s*$/u', $trimmed)
+            || (bool) preg_match('/^\s*' . $cp . '\s*$/u', $trimmed);
     }
 }

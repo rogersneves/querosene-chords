@@ -107,7 +107,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 <button @click="toggleScroll()"
                         :class="scrolling ? 'text-primary' : 'text-muted'"
                         class="w-7 h-7 flex items-center justify-center rounded-lg bg-surface hover:bg-white/10 transition-colors"
-                        :title="scrolling ? '{{ __('ui.song.pause') }}' : '{{ __('ui.song.autoscroll') }}'"
+                        :title="scrolling ? '{{ __('ui.song.pause') }}' : '{{ __('ui.song.autoscroll') }}'">
                     <svg x-show="!scrolling" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                     <svg x-show="scrolling" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
                 </button>
@@ -498,7 +498,7 @@ function songPlayer({ originalKey, songSlug }) {
             if (!diag || !diag.strings_pattern) return '<p class="text-xs text-muted">Sem diagrama</p>';
             const pattern = diag.strings_pattern.substring(0, 6);
             const strings = 6, fretCount = 4;
-            const sw = 20, fh = 22, startX = 22, startY = 24;
+            const sw = 20, fh = 22, startX = 30, startY = 24;
             const W = startX + (strings - 1) * sw + startX;
             const H = startY + fretCount * fh + 10;
 
@@ -532,7 +532,7 @@ function songPlayer({ originalKey, songSlug }) {
             // Fret position label for barre / high-position chords
             if (!showNut || (diag.barre && diag.barre > 1)) {
                 const labelFret = offset > 0 ? offset + 1 : diag.barre;
-                svg += `<text x="3" y="${startY + fh * 0.72}" fill="#888" font-size="9" font-family="monospace">${labelFret}fr</text>`;
+                svg += `<text x="${startX - 10}" y="${startY + fh * 0.72}" text-anchor="end" fill="#aaa" font-size="11" font-family="monospace">${labelFret}fr</text>`;
             }
 
             // Barre line
