@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0D0D0D">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'Querosene Chords') — {{ __('ui.app.tagline') }}</title>
     <meta name="description" content="@yield('description', __('ui.app.description'))">
     <meta property="og:site_name" content="Querosene Chords">
@@ -83,6 +84,34 @@
                class="px-3 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors">
                 {{ __('ui.nav.artists') }}
             </a>
+
+            <a href="{{ route('songs.browse') }}"
+               class="px-3 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors">
+                {{ __('ui.nav.browse') }}
+            </a>
+
+            {{-- Caderno / Auth --}}
+            @auth
+            <a href="{{ route('setlists.index') }}"
+               class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                </svg>
+                {{ __('ui.nav.my_setlists') }}
+            </a>
+            <form method="POST" action="{{ route('logout') }}" class="inline">
+                @csrf
+                <button type="submit"
+                        class="px-3 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors text-sm">
+                    {{ __('ui.nav.logout') }}
+                </button>
+            </form>
+            @else
+            <a href="{{ route('login') }}"
+               class="px-3 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors">
+                {{ __('ui.nav.login') }}
+            </a>
+            @endauth
 
             {{-- Seletor de idioma --}}
             <div x-data="{ open: false }" class="relative">

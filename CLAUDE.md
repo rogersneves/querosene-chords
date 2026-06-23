@@ -32,6 +32,9 @@ D:\wamp64\bin\php\php8.5.0\php.exe artisan migrate:fresh --seed
 
 # Limpar cache de config/views
 D:\wamp64\bin\php\php8.5.0\php.exe artisan optimize:clear
+
+# Popular chord_list nas músicas existentes (rodar após migrate:fresh)
+D:\wamp64\bin\php\php8.5.0\php.exe artisan songs:backfill-chords
 ```
 
 > O aviso `Failed loading php_xdebug-3.4.7-8.4-ts-vs17-x86_64.dll` é ruído não-bloqueante — aparece em todo comando PHP CLI.
@@ -59,6 +62,7 @@ Invoke-WebRequest -Uri "https://curl.se/ca/cacert.pem" -OutFile "storage\app\cac
 - **Rate limit:** 60 req/min via `throttleApi('60,1')` em `bootstrap/app.php`
 - **Paleta:** bg `#0D0D0D` · surface `#1A1A1A` · primary `#FF6D00` · secondary `#FFB300` · texto `#F5F5F5`
 - **Fonte:** Outfit (Google Fonts)
+- **Flags:** `flag-icons@7.2.3` via CDN (JSDelivr) — classes `fi fi-{iso2}`
 - **Package Android:** `br.com.querosene.chords`
 
 ---
@@ -66,10 +70,12 @@ Invoke-WebRequest -Uri "https://curl.se/ca/cacert.pem" -OutFile "storage\app\cac
 ## Schema do banco
 
 ```
-artists      id, name, slug*, bio, photo_path, country(2), genre, musicbrainz_id, timestamps
+artists      id, name, slug*, bio, bio_en, bio_es, bio_fr, photo_path, country(2),
+             genre, musicbrainz_id, timestamps
 categories   id, name, slug*, color(hex), timestamps
 songs        id, artist_id→artists, category_id→categories, title, slug*, key, difficulty,
-             bpm, year, album, musicbrainz_id, youtube_id, is_published, views, timestamps
+             bpm, year, album, musicbrainz_id, youtube_id, is_published, views,
+             chord_list(json nullable), timestamps
              [fulltext: title] [index: slug, views, created_at, is_published]
 chords       id, song_id→songs, version_label, content(longtext ChordPro), source,
              tab_content, is_default(bool), timestamps
@@ -77,9 +83,61 @@ chord_diagrams id, chord_name*, strings_pattern, fingering(json), fingers(json),
 imports      id, original_filename, format, status(pending|processing|completed|failed),
              total_files, imported_count, failed_count, log(json), timestamps
              [index: created_at, status]
+setlists     id, user_id→users, name, is_public(bool), timestamps
+             [index: user_id]
+setlist_songs id, setlist_id→setlists, song_id→songs, position(smallint), timestamps
+             [unique: setlist_id+song_id] [index: setlist_id+position]
+mfa_codes    id, user_id→users, code(hash), expires_at, timestamps
+             [index: user_id]
+mfa_trusted_devices id, user_id→users, token_hash(sha256,64), expires_at, timestamps
+             [index: user_id+token_hash]
 ```
 
 `*` = unique index
+
+---
+
+## Autenticação pública (site)
+
+Separada do admin Filament. Usa a mesma tabela `users` — o acesso ao painel é restrito via `canAccessPanel()` que verifica `email === 'admin@querosene.test'`.
+
+### Rotas de auth
+
+| Rota | Descrição |
+|---|---|
+| `GET /entrar` | Formulário de login |
+| `POST /entrar` | Valida credenciais → envia código MFA → redireciona para /verificar |
+| `GET /cadastrar` | Formulário de cadastro |
+| `POST /cadastrar` | Cria conta + login direto (sem MFA no cadastro) |
+| `POST /sair` | Logout |
+| `GET /verificar` | Formulário do código MFA |
+| `POST /verificar` | Valida código → faz login → opcionalmente confia no navegador por 30 dias |
+| `POST /verificar/reenviar` | Gera novo código e reenvia |
+
+### MFA por email
+
+- **Fluxo**: credenciais válidas → verifica cookie de dispositivo confiável → se não confiável, envia código de 6 dígitos para o email → `/verificar`
+- **Código**: 6 dígitos, expira em 10 minutos, armazenado como `bcrypt()` em `mfa_codes`
+- **Dispositivo confiável**: checkbox "não pedir por 30 dias" → salva `hash('sha256', $token)` em `mfa_trusted_devices` + cookie httponly `mfa_device_token` por 30 dias
+- **Rate limit**: 5 tentativas erradas / 5 min por usuário; 3 reenvios / 5 min
+- **Email**: `App\Mail\MfaCodeMail` → view `resources/views/emails/mfa_code.blade.php`
+- **Config**: definir `MAIL_MAILER`, `MAIL_HOST`, etc. no `.env`. Para desenvolvimento local usar `MAIL_MAILER=log` — código aparece em `storage/logs/laravel.log`
+
+### Caderno de Setlists — `/caderno`
+
+Requer autenticação. Todas as rotas prefixadas com `/caderno` e agrupadas com middleware `auth`.
+
+| Rota | Descrição |
+|---|---|
+| `GET /caderno` | Lista setlists do usuário |
+| `POST /caderno` | Cria nova setlist |
+| `GET /caderno/{setlist}` | Detalhe da setlist |
+| `DELETE /caderno/{setlist}` | Exclui setlist |
+| `PATCH /caderno/{setlist}/renomear` | Renomeia setlist |
+| `POST /caderno/{setlist}/toggle` | Adiciona/remove música (JSON, sem reload) |
+| `DELETE /caderno/{setlist}/musica/{song}` | Remove música |
+
+Na página de cada cifra: botão **Salvar** (ícone marcador) → dropdown com setlists do usuário. Usuário não logado vê botão cinza que redireciona para login.
 
 ---
 
@@ -105,21 +163,22 @@ Todos os endpoints são **públicos** (sem auth no estado atual). Prefixo `api/`
 
 ## Admin Filament — `/admin`
 
+Acesso restrito: apenas `admin@querosene.test` via `canAccessPanel()` no `User` model.
+
 Recursos disponíveis:
 
 | Resource | Model | Observações |
 |---|---|---|
-| `SongResource` | `Song` | Botão **Enriquecer** no rodapé do card Informações (só na edição); `chord_content` é `dehydrated(false)` — salvo manualmente nas pages Create/Edit; lista usa `select()` explícito + `with(['artist','category'])` para evitar N+1 |
-| `ArtistResource` | `Artist` | Botão **Enriquecer** no rodapé do card Informações (só na edição); `musicbrainz_id` exibido como somente-leitura |
+| `SongResource` | `Song` | Botão **Enriquecer** no rodapé do card Informações (só na edição); `chord_content` é `dehydrated(false)` — salvo manualmente nas pages Create/Edit; popula `chord_list` ao salvar; lista usa `select()` explícito + `with(['artist','category'])` para evitar N+1 |
+| `ArtistResource` | `Artist` | Botão **Enriquecer** no rodapé do card Informações (só na edição); `musicbrainz_id` exibido como somente-leitura; bio em 4 idiomas via Tabs |
 | `CategoryResource` | `Category` | |
 | `ImportResource` | `Import` | Página customizada `CreateImport` com wizard 3 passos; lista exclui coluna `log` da query para performance |
 
 ### Botão Enriquecer (SongResource — edição)
 
-Localizado no canto inferior direito do card "Informações". Ao clicar:
 1. Invalida os caches MusicBrainz (`mb_recording_*`, `mb_artist_*`) e TheAudioDB (`tadb_artist_*`)
 2. Consulta MusicBrainz: ano, álbum, MBID da gravação
-3. Consulta MusicBrainz + TheAudioDB: gênero, bio em português, país, MBID, foto do artista
+3. Consulta MusicBrainz + TheAudioDB: gênero, bio PT/EN/ES/FR, país, MBID, foto do artista
 4. Baixa e salva a foto se o artista ainda não tiver uma (`photo_path`)
 5. Busca YouTube ID (sempre — independente de já existir)
 6. Atualiza o banco e redireciona para recarregar o form
@@ -127,9 +186,8 @@ Localizado no canto inferior direito do card "Informações". Ao clicar:
 
 ### Botão Enriquecer (ArtistResource — edição)
 
-Localizado no canto inferior direito do card "Informações". Ao clicar:
 1. Invalida os caches `mb_artist_*` e `tadb_artist_*`
-2. Consulta MusicBrainz + TheAudioDB: gênero, bio em português, país, MBID, foto
+2. Consulta MusicBrainz + TheAudioDB: gênero, bio PT/EN/ES/FR, país, MBID, foto
 3. Baixa e salva a foto se o artista ainda não tiver uma
 4. Atualiza o banco e redireciona para recarregar o form
 5. Notificação lista os campos atualizados
@@ -156,7 +214,7 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 | `MusicXmlConverter` | SimpleXML; suporta `.mxl` (ZIP) e `.xml` |
 | `GuitarProConverter` | **Stub** — lança `RuntimeException` (implementação v1.1) |
 | `ZipBatchImporter` | Extrai ZIP → `storage/app/temp/imports/{uuid}/`; lista, preview, converte, cleanup |
-| `MusicMetadataService` | Consulta **MusicBrainz API** + **Wikipedia** + **TheAudioDB** para enriquecer metadados; baixa foto do artista |
+| `MusicMetadataService` | Consulta **MusicBrainz API** + **Wikipedia/Wikidata** + **TheAudioDB** para enriquecer metadados; baixa foto do artista |
 | `YouTubeSearchService` | Busca YouTube Data API v3 pelo primeiro vídeo correspondente (chave em `YOUTUBE_API_KEY`) |
 
 ### MusicMetadataService
@@ -165,6 +223,9 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 - Cache: 7 dias — chaves `mb_artist_*`, `mb_recording_*` (MusicBrainz + TheAudioDB fundidos), `tadb_artist_*` (TheAudioDB isolado)
 - **MusicBrainz**: país (ISO-2), gênero, MBID do artista; ano (fallback para `releases[].date`), álbum, MBID da gravação; bio via Wikipedia
 - **TheAudioDB** (`theaudiodb.com/api/v1/json/2/search.php?s=`): foto do artista (`strArtistThumb`), bio em português (`strBiographyPT`) com fallback inglês, gênero como fallback
+- **Bio multilíngue (PT/EN/ES/FR)**: estratégia em dois níveis:
+  1. Relação `wikipedia` no MusicBrainz → Wikipedia REST + langlinks API
+  2. Relação `wikidata` no MusicBrainz (mais comum hoje) → Wikidata sitelinks API → Wikipedia REST em cada idioma
 - `downloadArtistPhoto(url, slug)`: baixa a foto e salva em `storage/app/public/artists/{slug}.{ext}`; retorna path relativo ao disco `public`
 - **Nunca lança exceção** — falhas são logadas com `Log::warning` e retornam `[]`/`null`
 - User-Agent obrigatório: `QuerosenoChords/1.0 (rogersneves@gmail.com)`
@@ -180,8 +241,8 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 ### Job: `ProcessBatchImportJob`
 
 - Queue: `imports` · timeout: 300 s · tries: 2
-- Fluxo: lista arquivos → detecta formato → converte → split `"Título - Artista"` (antes do enriquecimento) → enriquece via MusicBrainz + TheAudioDB → baixa foto do artista → busca YouTube → persiste Artist + Song + Chord + ChordDiagrams
-- Se artista já existe, preenche silenciosamente campos nulos (genre, bio, musicbrainz_id, country, photo_path)
+- Fluxo: lista arquivos → detecta formato → converte → split `"Título - Artista"` (antes do enriquecimento) → enriquece via MusicBrainz + TheAudioDB → baixa foto do artista → busca YouTube → persiste Artist + Song + Chord + ChordDiagrams → popula `chord_list`
+- Se artista já existe, preenche silenciosamente campos nulos (genre, bio, bio_en, bio_es, bio_fr, musicbrainz_id, country, photo_path)
 - **Slug de músicas**: calculado após o título final (pós-split) e após o artista ser resolvido
   - Colisão com **mesmo artista** → "Duplicata ignorada" (respeita flag `overwriteDuplicates`)
   - Colisão com **artista diferente** → slug `{titulo}-{slug-do-artista}` (unicidade garantida por `uniqueSlug()`)
@@ -203,27 +264,65 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 ## Modelos — pontos importantes
 
 ### `Artist`
-- `booted()`: auto-gera `slug` no `creating` se vazio
-- `$fillable`: name, slug, bio, photo_path, country, genre, musicbrainz_id
+- `booted()`: auto-gera `slug` no `creating` via `artist_slug()` (normaliza `&`/`+` → `e`)
+- `$fillable`: name, slug, bio, bio_en, bio_es, bio_fr, photo_path, country, genre, musicbrainz_id
 
 ### `Song`
 - `booted()`: auto-gera `slug` no `creating` se vazio
 - `defaultChord()`: `HasOne` filtrado por `is_default = true`
+- `setlists()`: `BelongsToMany` via `setlist_songs`
 - `incrementViews()`: incrementa o contador atomicamente
-- `$fillable`: artist_id, category_id, title, slug, key, difficulty, bpm, year, album, musicbrainz_id, youtube_id, is_published, views
+- `extractChordList(string $content): array` — método estático; extrai acordes únicos ordenados do conteúdo ChordPro
+- `$fillable`: artist_id, category_id, title, slug, key, difficulty, bpm, year, album, musicbrainz_id, youtube_id, is_published, views, chord_list
+- `chord_list` cast `array`; populado automaticamente na importação, ao salvar pelo admin, e via `songs:backfill-chords`
 
 ### `Chord`
 - `booted()` `saving`: garante no máximo um `is_default = true` por `song_id` (zera os outros)
+
+### `Setlist`
+- `$fillable`: user_id, name, is_public
+- `user()`: `BelongsTo(User)`
+- `songs()`: `BelongsToMany(Song)` via `setlist_songs`, ordenado por `position`
+
+### `User`
+- Implementa `FilamentUser` — `canAccessPanel()` retorna `true` apenas para `admin@querosene.test`
+- `setlists()`: `HasMany(Setlist)`
+
+### `MfaCode`
+- `$fillable`: user_id, code (bcrypt hash), expires_at
+- `isExpired()`: verifica se `expires_at` é passado
+
+### `MfaTrustedDevice`
+- `$fillable`: user_id, token_hash (SHA-256), expires_at
+- `isValid(int $userId, string $rawToken): bool` — método estático
+- `issue(int $userId): string` — cria registro e retorna token bruto para o cookie
+- `pruneExpired(): int` — remove registros expirados
+
+---
+
+## Helpers globais (`app/helpers.php`)
+
+Registrados via `composer.json > autoload > files`.
+
+| Função | Descrição |
+|---|---|
+| `artist_slug(string $name): string` | Slug normalizado: substitui `&`/`+` por ` e ` antes de `Str::slug()`. Garante que "Bruno & Marrone" e "Bruno e Marrone" gerem o mesmo slug |
+| `genre_title(string $genre): string` | Title case com exceções (preposições/artigos PT e EN). Usa `mb_ucfirst()` (PHP 8.3+) |
+| `country_flag(string $code): string` | Converte código ISO-3166-1 (2 letras) em emoji de bandeira Unicode. Retorna o código original se inválido |
 
 ---
 
 ## Interface Web pública
 
 - **Home** (`resources/views/home.blade.php`): ordem das seções — Novidades → Mais tocadas → Categorias; todas as seções usam `grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`
+- **Explorar** (`/explorar`): chord picker com 32 acordes comuns; selecionar acordes e buscar retorna apenas músicas cujo `chord_list` é subconjunto dos acordes selecionados
 - **Song card** (`resources/views/partials/song-card.blade.php`): exibe badge do YouTube (ícone vermelho) quando `youtube_id` está preenchido
-- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup
+- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup, botão **Salvar na Setlist**
+- **Artista** (`resources/views/artist/show.blade.php`): bandeira do país via `fi fi-{iso2}`, bio multilíngue com expand/collapse Alpine.js (botão oculto quando texto não é cortado), gênero via `genre_title()`
 - **Fotos de artistas**: salvas em `storage/app/public/artists/{slug}.{ext}` · acessíveis via `Storage::disk('public')->url($artist->photo_path)` · symlink `public/storage` já criado
 - Controllers web usam eager loading `with(['artist', 'category'])` em todas as listagens
+- **CSS global**: `a, button { cursor: pointer }` via `@layer base` em `resources/css/app.css`
+- **meta CSRF**: `<meta name="csrf-token">` no layout (usado pelo fetch do toggle de setlist)
 
 ---
 
@@ -237,7 +336,7 @@ DatabaseSeeder
   └── SongSeeder      — 10 músicas com ChordPro completo (2 por artista)
 ```
 
-> **Atenção:** Os seeders definem `slug` explicitamente via `Str::slug()` — não dependem do `booted()` para evitar rejeição do MySQL no modo strict (NOT NULL sem default).
+> **Atenção:** Os seeders definem `slug` explicitamente via `Str::slug()` — não dependem do `booted()` para evitar rejeição do MySQL no modo strict (NOT NULL sem default). Após `migrate:fresh --seed`, rodar `songs:backfill-chords` para popular `chord_list`.
 
 ---
 
@@ -254,6 +353,9 @@ DatabaseSeeder
 | `cURL error 60` (SSL) no WAMP | Resolvido no código via `withOptions(['verify' => storage_path('app/cacert.pem')])` — não editar php.ini |
 | Queue worker não pega mudanças de código | Reiniciar o worker — processo de longa duração cacheia PHP em memória |
 | MusicBrainz/YouTube retorna dados mas form não atualiza | O botão Enriquecer redireciona automaticamente após salvar |
+| Bio EN/ES/FR não gerada pelo Enriquecer | MusicBrainz usa relação `wikidata` (não `wikipedia`) — `biosFromWikidata()` trata este caso |
+| Código MFA não chega por email | Verificar `MAIL_MAILER` no `.env`; em dev usar `log` e ler em `storage/logs/laravel.log` |
+| Usuário público consegue acessar `/admin` | `canAccessPanel()` no `User` model restringe por email — não remover |
 
 ---
 
@@ -262,18 +364,21 @@ DatabaseSeeder
 ### ✅ Concluído
 - Migrations, Models, Seeders
 - API REST (11 endpoints)
-- Admin Filament (4 Resources + wizard de importação)
-- Importadores: Cifra Club TXT (com tablaturas), ChordPro (extensões `.pro .cho .chopro .crd .chord .chordpro`), MusicXML, ZIP batch
-- Queue job com `ProcessBatchImportJob` (MusicBrainz + TheAudioDB + YouTube + inferência de tom)
+- Admin Filament (4 Resources + wizard de importação) — restrito a admin por `canAccessPanel()`
+- Importadores: Cifra Club TXT (com tablaturas), ChordPro, MusicXML, ZIP batch
+- Queue job com `ProcessBatchImportJob` (MusicBrainz + TheAudioDB + YouTube + inferência de tom + `chord_list`)
 - Enriquecimento automático na importação + botão Enriquecer manual em músicas e artistas
-- Foto do artista: baixada automaticamente do TheAudioDB na importação e no botão Enriquecer
-- Bio do artista em português via TheAudioDB (`strBiographyPT`)
+- Bio do artista em 4 idiomas (PT/EN/ES/FR) via TheAudioDB + Wikipedia/Wikidata
+- Foto do artista: baixada automaticamente do TheAudioDB
 - Slug de músicas com desambiguação por artista (versões cover não conflitam)
 - Renderizador ChordPro com tablatura, seções, anotações e validação de acordes
 - Interface Web pública: player com transposição, auto-scroll, YouTube, diagramas
 - Home com grid responsivo (Novidades → Mais tocadas → Categorias)
-- Badge de vídeo nos cards de músicas
-- Indexes de performance no banco (`created_at`, `is_published`, `status`)
+- **Explorar cifras** (`/explorar`): filtro por acordes conhecidos (chord picker)
+- **Caderno de Setlists** (`/caderno`): criar, renomear, excluir setlists; adicionar/remover músicas
+- **Auth pública**: cadastro, login com MFA por email, dispositivo confiável por 30 dias
+- Bandeira do país na página do artista (via `flag-icons`)
+- Indexes de performance no banco
 - SSL configurado no código para funcionar independente do ambiente Windows
 
 ### ⏳ Pendente
@@ -281,3 +386,4 @@ DatabaseSeeder
 - GuitarPro GP5 converter (v1.1)
 - Auto-scroll por BPM (v1.1)
 - Auth Sanctum para endpoints da API (atualmente públicos)
+- Limpeza periódica de `mfa_codes` e `mfa_trusted_devices` expirados (scheduled command)

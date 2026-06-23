@@ -4,6 +4,7 @@ namespace App\Filament\Resources\SongResource\Pages;
 
 use App\Filament\Resources\SongResource;
 use App\Models\Chord;
+use App\Models\Song;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
@@ -36,6 +37,7 @@ class EditSong extends EditRecord
                     'version_label' => 'Padrão',
                 ]
             );
+            $this->record->updateQuietly(['chord_list' => Song::extractChordList($data['chord_content'])]);
         }
     }
 

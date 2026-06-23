@@ -4,6 +4,7 @@ namespace App\Filament\Resources\SongResource\Pages;
 
 use App\Filament\Resources\SongResource;
 use App\Models\Chord;
+use App\Models\Song;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateSong extends CreateRecord
@@ -22,6 +23,7 @@ class CreateSong extends CreateRecord
                 'source' => $data['chord_source'] ?? 'manual',
                 'is_default' => true,
             ]);
+            $this->record->updateQuietly(['chord_list' => Song::extractChordList($data['chord_content'])]);
         }
     }
 }

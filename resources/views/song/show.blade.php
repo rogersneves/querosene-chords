@@ -45,6 +45,52 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                     </p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-sm">
+                    {{-- Salvar na Setlist --}}
+                    @auth
+                    @php $userSetlists = auth()->user()->setlists()->orderBy('name')->get(); @endphp
+                    <div x-data="{ open: false }" class="relative">
+                        <button @click="open = !open" @keydown.escape="open = false"
+                                class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold
+                                       bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                            </svg>
+                            {{ __('ui.setlist.save_btn') }}
+                        </button>
+                        <div x-show="open" @click.outside="open = false"
+                             x-transition:enter="transition ease-out duration-100"
+                             x-transition:enter-start="opacity-0 scale-95"
+                             x-transition:enter-end="opacity-100 scale-100"
+                             class="absolute left-0 top-full mt-1 w-52 bg-surface border border-white/10 rounded-xl shadow-xl z-30 overflow-hidden">
+                            @forelse($userSetlists as $setlist)
+                            <button @click="toggleSetlist({{ $setlist->id }}, $el); open = false"
+                                    data-setlist="{{ $setlist->id }}"
+                                    data-song="{{ $song->id }}"
+                                    class="w-full text-left px-4 py-2.5 text-sm hover:bg-white/5 transition-colors flex items-center gap-2">
+                                <svg class="w-3.5 h-3.5 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                                </svg>
+                                {{ $setlist->name }}
+                            </button>
+                            @empty
+                            <a href="{{ route('setlists.index') }}" @click="open = false"
+                               class="block px-4 py-2.5 text-sm text-muted hover:bg-white/5 transition-colors">
+                                {{ __('ui.setlist.create_first') }}
+                            </a>
+                            @endforelse
+                        </div>
+                    </div>
+                    @else
+                    <a href="{{ route('login') }}"
+                       class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold
+                              bg-white/5 text-muted hover:bg-white/10 transition-colors border border-white/10">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                        </svg>
+                        {{ __('ui.setlist.save_btn') }}
+                    </a>
+                    @endauth
+
                     @if($song->category)
                     <span class="rounded-lg px-2.5 py-1 text-xs font-semibold"
                           style="background:{{ $song->category->color }}22;color:{{ $song->category->color }}">
@@ -564,6 +610,25 @@ function songPlayer({ originalKey, songSlug }) {
             return svg;
         },
     };
+}
+
+function toggleSetlist(setlistId, btn) {
+    const songId = btn.dataset.song;
+    fetch(`/caderno/${setlistId}/toggle`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content
+                         ?? document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1]?.replace(/%3D/g, '=') ?? '',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({ song_id: songId }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        const svg = btn.querySelector('svg');
+        if (svg) svg.style.color = data.added ? '#FF6D00' : '';
+    });
 }
 </script>
 @endpush

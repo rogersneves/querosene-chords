@@ -194,6 +194,8 @@ class ProcessBatchImportJob implements ShouldQueue
             ]
         );
 
+        $song->updateQuietly(['chord_list' => Song::extractChordList($data['content'])]);
+
         // Populate chord_diagrams for every chord referenced in this song
         // that doesn't already have an entry, using the built-in dictionary.
         preg_match_all('/\[([A-G][#b]?[^\]]*)\]/', $data['content'], $chordMatches);
