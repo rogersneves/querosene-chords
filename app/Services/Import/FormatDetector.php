@@ -49,6 +49,12 @@ class FormatDetector
             return 'cifraclub';
         }
 
+        // Extension-based fallback for known ChordPro file extensions
+        $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        if (in_array($ext, ['pro', 'cho', 'chopro', 'crd', 'chord', 'chordpro'], true)) {
+            return 'chordpro';
+        }
+
         return 'unknown';
     }
 

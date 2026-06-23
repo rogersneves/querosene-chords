@@ -20,6 +20,11 @@ class ImportResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->select([
+                'id', 'original_filename', 'format',
+                'total_files', 'imported_count', 'failed_count',
+                'status', 'created_at',
+            ]))
             ->columns([
                 Tables\Columns\TextColumn::make('original_filename')
                     ->label('Arquivo')

@@ -10,6 +10,7 @@ class ChordProRenderer
         $count     = count($lines);
         $html      = '';
         $inSection = false;
+        $inTabSection = false;
 
         for ($i = 0; $i < $count; $i++) {
             $line = rtrim($lines[$i]);
@@ -21,6 +22,7 @@ class ChordProRenderer
                 if (preg_match('/^start_of_(\w+)(?::\s*(.+))?$/i', $directive, $dm)) {
                     if ($inSection) {
                         $html .= "</div>\n";
+                        $inTabSection = false; // Reset tab flag when closing previous section
                     }
 
                     $suffix = strtolower($dm[1]);
@@ -41,6 +43,7 @@ class ChordProRenderer
                     $html .= "<div class=\"cp-section cp-section-{$type}\">\n";
                     $html .= '<span class="cp-section-label">' . $this->e($label) . "</span>\n";
                     $inSection = true;
+                    $inTabSection = ($type === 'tab');
                     continue;
                 }
 
@@ -48,6 +51,7 @@ class ChordProRenderer
                     if ($inSection) {
                         $html .= "</div>\n";
                         $inSection = false;
+                        $inTabSection = false;
                     }
                     continue;
                 }
@@ -129,7 +133,7 @@ class ChordProRenderer
             }
 
             // ── Regular line (may have inline [Chord] markers) ────────────────
-            $html .= $this->renderLine($line);
+            $html .= $this->renderLine($line, $inTabSection);
         }
 
         if ($inSection) {
@@ -233,8 +237,13 @@ class ChordProRenderer
         return $html;
     }
 
-    private function renderLine(string $line): string
+    private function renderLine(string $line, bool $inTabSection = false): string
     {
+        // In tab sections, strip chord markers and render only the lyric text
+        if ($inTabSection && str_contains($line, '[')) {
+            $line = preg_replace('/\[[^\]]+\]/', '', $line);
+        }
+
         if (! str_contains($line, '[')) {
             // Plain lyric line with no chords
             return '<div class="cp-line"><span class="cp-pair">'
@@ -251,7 +260,19 @@ class ChordProRenderer
 
         foreach ($parts as $part) {
             if (preg_match('/^\[([^\]]+)\]$/', $part, $m)) {
-                $currentChord = $m[1];
+                if ($this->isChordToken($m[1])) {
+                    $currentChord = $m[1];
+                } else {
+                    // Bracketed text that isn't a chord — render as lyric
+                    $chordAttr = $currentChord !== ''
+                        ? ' data-chord="' . $this->e($currentChord) . '"'
+                        : '';
+                    $html .= '<span class="cp-pair">'
+                        . '<span class="cp-chord"' . $chordAttr . '>' . $this->e($currentChord) . '</span>'
+                        . '<span class="cp-lyric">' . $this->e($m[1]) . '</span>'
+                        . '</span>';
+                    $currentChord = '';
+                }
             } else {
                 // Skip empty leading fragment with no pending chord
                 if ($currentChord === '' && $part === '') {

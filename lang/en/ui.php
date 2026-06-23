@@ -43,6 +43,8 @@ return [
     'artist' => [
         'meta_description' => 'Tabs for :name. :bio',
         'bio_fallback'     => 'Check out all songs.',
+        'bio_expand'       => 'Read more',
+        'bio_collapse'     => 'Collapse',
         'all_chords'       => 'All tabs',
         'no_chords'        => 'No tabs available yet.',
         'count'            => ':count tab|:count tabs',

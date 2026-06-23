@@ -48,7 +48,7 @@ class CreateImport extends Page
 
                 Forms\Components\Select::make('default_category_id')
                     ->label('Categoria padrão')
-                    ->options(\App\Models\Category::pluck('name', 'id'))
+                    ->options(\App\Models\Category::orderBy('name')->pluck('name', 'id'))
                     ->searchable()
                     ->nullable(),
 

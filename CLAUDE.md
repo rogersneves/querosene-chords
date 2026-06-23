@@ -36,6 +36,17 @@ D:\wamp64\bin\php\php8.5.0\php.exe artisan optimize:clear
 
 > O aviso `Failed loading php_xdebug-3.4.7-8.4-ts-vs17-x86_64.dll` é ruído não-bloqueante — aparece em todo comando PHP CLI.
 
+### SSL em ambiente Windows/WAMP
+
+O WAMP não tem certificados SSL configurados por padrão, causando `cURL error 60` em qualquer requisição HTTPS (MusicBrainz, Wikipedia, YouTube). A solução está no código: todos os serviços HTTP carregam `storage/app/cacert.pem` via `withOptions(['verify' => ...])`. **Não depende de `php.ini` nem de `phpForApache.ini`.**
+
+Se precisar regenerar o cacert:
+```powershell
+Invoke-WebRequest -Uri "https://curl.se/ca/cacert.pem" -OutFile "storage\app\cacert.pem" -UseBasicParsing
+```
+
+> O queue worker deve ser **reiniciado sempre que o código PHP mudar** — é um processo de longa duração que carrega os arquivos em memória.
+
 ---
 
 ## Stack
@@ -58,13 +69,14 @@ D:\wamp64\bin\php\php8.5.0\php.exe artisan optimize:clear
 artists      id, name, slug*, bio, photo_path, country(2), genre, musicbrainz_id, timestamps
 categories   id, name, slug*, color(hex), timestamps
 songs        id, artist_id→artists, category_id→categories, title, slug*, key, difficulty,
-             bpm, year, album, musicbrainz_id, is_published, views, timestamps
-             [fulltext: title] [index: slug, views]
+             bpm, year, album, musicbrainz_id, youtube_id, is_published, views, timestamps
+             [fulltext: title] [index: slug, views, created_at, is_published]
 chords       id, song_id→songs, version_label, content(longtext ChordPro), source,
              tab_content, is_default(bool), timestamps
-chord_diagrams id, song_id→songs, chord_name, positions(json), fingers(json), timestamps
+chord_diagrams id, chord_name*, strings_pattern, fingering(json), fingers(json), barre, timestamps
 imports      id, original_filename, format, status(pending|processing|completed|failed),
              total_files, imported_count, failed_count, log(json), timestamps
+             [index: created_at, status]
 ```
 
 `*` = unique index
@@ -97,14 +109,34 @@ Recursos disponíveis:
 
 | Resource | Model | Observações |
 |---|---|---|
-| `SongResource` | `Song` | icon `heroicon-o-queue-list`; campo `chord_content` é `dehydrated(false)` — salvo manualmente nas pages Create/Edit |
-| `ArtistResource` | `Artist` | `musicbrainz_id` exibido como somente-leitura |
+| `SongResource` | `Song` | Botão **Enriquecer** no rodapé do card Informações (só na edição); `chord_content` é `dehydrated(false)` — salvo manualmente nas pages Create/Edit; lista usa `select()` explícito + `with(['artist','category'])` para evitar N+1 |
+| `ArtistResource` | `Artist` | Botão **Enriquecer** no rodapé do card Informações (só na edição); `musicbrainz_id` exibido como somente-leitura |
 | `CategoryResource` | `Category` | |
-| `ImportResource` | `Import` | Página customizada `CreateImport` com wizard 3 passos |
+| `ImportResource` | `Import` | Página customizada `CreateImport` com wizard 3 passos; lista exclui coluna `log` da query para performance |
+
+### Botão Enriquecer (SongResource — edição)
+
+Localizado no canto inferior direito do card "Informações". Ao clicar:
+1. Invalida os caches MusicBrainz (`mb_recording_*`, `mb_artist_*`) e TheAudioDB (`tadb_artist_*`)
+2. Consulta MusicBrainz: ano, álbum, MBID da gravação
+3. Consulta MusicBrainz + TheAudioDB: gênero, bio em português, país, MBID, foto do artista
+4. Baixa e salva a foto se o artista ainda não tiver uma (`photo_path`)
+5. Busca YouTube ID (sempre — independente de já existir)
+6. Atualiza o banco e redireciona para recarregar o form
+7. Notificação lista os campos atualizados
+
+### Botão Enriquecer (ArtistResource — edição)
+
+Localizado no canto inferior direito do card "Informações". Ao clicar:
+1. Invalida os caches `mb_artist_*` e `tadb_artist_*`
+2. Consulta MusicBrainz + TheAudioDB: gênero, bio em português, país, MBID, foto
+3. Baixa e salva a foto se o artista ainda não tiver uma
+4. Atualiza o banco e redireciona para recarregar o form
+5. Notificação lista os campos atualizados
 
 ### Importação (wizard)
 
-1. **Upload** — detecta formato automaticamente (`FormatDetector`)
+1. **Upload** — detecta formato automaticamente (`FormatDetector`); aceita qualquer extensão (validação pelo conteúdo)
 2. **Preview** — mostra primeiros 5 arquivos/título/artista
 3. **Processing** — dispatcha `ProcessBatchImportJob` via queue; polling `wire:poll.3000ms`
 
@@ -118,28 +150,53 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 
 | Serviço | Função |
 |---|---|
-| `FormatDetector` | Detecta formato pelos primeiros 512 bytes (magic bytes + regex) |
-| `CifraClubConverter` | TXT Cifra Club → ChordPro; extrai diagramas de acordes do rodapé |
+| `FormatDetector` | Detecta formato pelos primeiros 512 bytes (magic bytes + regex); fallback por extensão para `.pro .cho .chopro .crd .chord .chordpro` |
+| `CifraClubConverter` | TXT Cifra Club → ChordPro; suporta tablaturas (`{start_of_tab}`), seções, diagramas no rodapé, linhas consecutivas de acordes |
 | `ChordProImporter` | Passthrough ChordPro com parse de headers `{title:}` `{artist:}` |
 | `MusicXmlConverter` | SimpleXML; suporta `.mxl` (ZIP) e `.xml` |
 | `GuitarProConverter` | **Stub** — lança `RuntimeException` (implementação v1.1) |
 | `ZipBatchImporter` | Extrai ZIP → `storage/app/temp/imports/{uuid}/`; lista, preview, converte, cleanup |
-| `MusicMetadataService` | Consulta **MusicBrainz API** + **Wikipedia** para enriquecer metadados |
+| `MusicMetadataService` | Consulta **MusicBrainz API** + **Wikipedia** + **TheAudioDB** para enriquecer metadados; baixa foto do artista |
+| `YouTubeSearchService` | Busca YouTube Data API v3 pelo primeiro vídeo correspondente (chave em `YOUTUBE_API_KEY`) |
 
 ### MusicMetadataService
 
-- Rate limit interno: 1,3 s entre chamadas (MusicBrainz permite 1 req/s)
-- Cache: 7 dias por artista/música (chave `mb_artist_*` e `mb_recording_*`)
-- Busca: país, gênero, MBID do artista; ano, álbum, MBID da gravação; bio via Wikipedia
-- **Nunca lança exceção** — falhas são logadas com `Log::warning` e retornam `[]`
+- Rate limit interno: 1,3 s entre chamadas MusicBrainz (MusicBrainz permite 1 req/s); TheAudioDB sem rate limit
+- Cache: 7 dias — chaves `mb_artist_*`, `mb_recording_*` (MusicBrainz + TheAudioDB fundidos), `tadb_artist_*` (TheAudioDB isolado)
+- **MusicBrainz**: país (ISO-2), gênero, MBID do artista; ano (fallback para `releases[].date`), álbum, MBID da gravação; bio via Wikipedia
+- **TheAudioDB** (`theaudiodb.com/api/v1/json/2/search.php?s=`): foto do artista (`strArtistThumb`), bio em português (`strBiographyPT`) com fallback inglês, gênero como fallback
+- `downloadArtistPhoto(url, slug)`: baixa a foto e salva em `storage/app/public/artists/{slug}.{ext}`; retorna path relativo ao disco `public`
+- **Nunca lança exceção** — falhas são logadas com `Log::warning` e retornam `[]`/`null`
 - User-Agent obrigatório: `QuerosenoChords/1.0 (rogersneves@gmail.com)`
+- SSL configurado via `withOptions(['verify' => storage_path('app/cacert.pem')])`
+
+### YouTubeSearchService
+
+- Chave de API em `YOUTUBE_API_KEY` no `.env` → `config('services.youtube.api_key')`
+- Endpoint: `googleapis.com/youtube/v3/search` · `maxResults=1` · `type=video`
+- Retorna `videoId` ou `null` (nunca lança exceção)
+- SSL configurado via `withOptions(['verify' => storage_path('app/cacert.pem')])`
 
 ### Job: `ProcessBatchImportJob`
 
 - Queue: `imports` · timeout: 300 s · tries: 2
-- Fluxo: lista arquivos → detecta formato → converte → enriquece via MusicBrainz → persiste Artist + Song + Chord
-- Se artista já existe, preenche silenciosamente campos nulos (genre, bio, musicbrainz_id, country)
+- Fluxo: lista arquivos → detecta formato → converte → split `"Título - Artista"` (antes do enriquecimento) → enriquece via MusicBrainz + TheAudioDB → baixa foto do artista → busca YouTube → persiste Artist + Song + Chord + ChordDiagrams
+- Se artista já existe, preenche silenciosamente campos nulos (genre, bio, musicbrainz_id, country, photo_path)
+- **Slug de músicas**: calculado após o título final (pós-split) e após o artista ser resolvido
+  - Colisão com **mesmo artista** → "Duplicata ignorada" (respeita flag `overwriteDuplicates`)
+  - Colisão com **artista diferente** → slug `{titulo}-{slug-do-artista}` (unicidade garantida por `uniqueSlug()`)
 - `failed()` marca import como `failed` no banco
+
+---
+
+## Renderizador ChordPro (`app/Services/ChordProRenderer.php`)
+
+- Converte conteúdo ChordPro em HTML para a view pública
+- Suporta seções (`{start_of_verse}`, `{start_of_chorus}`, `{start_of_tab}`, etc.)
+- Tablaturas (`E|---`) renderizadas em `<pre class="cp-tab">` com borda âmbar
+- Linhas de anotação (`Intro: [Am] [G]`) renderizadas inline
+- `[Chord]` em colchetes só é tratado como acorde se passar por `isChordToken()` — letras entre colchetes que não sejam acordes válidos são renderizadas como letra
+- Transposição e diagramas de acordes via JavaScript (Alpine.js) na view pública
 
 ---
 
@@ -153,10 +210,20 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 - `booted()`: auto-gera `slug` no `creating` se vazio
 - `defaultChord()`: `HasOne` filtrado por `is_default = true`
 - `incrementViews()`: incrementa o contador atomicamente
-- `$fillable`: artist_id, category_id, title, slug, key, difficulty, bpm, year, album, musicbrainz_id, is_published, views
+- `$fillable`: artist_id, category_id, title, slug, key, difficulty, bpm, year, album, musicbrainz_id, youtube_id, is_published, views
 
 ### `Chord`
 - `booted()` `saving`: garante no máximo um `is_default = true` por `song_id` (zera os outros)
+
+---
+
+## Interface Web pública
+
+- **Home** (`resources/views/home.blade.php`): ordem das seções — Novidades → Mais tocadas → Categorias; todas as seções usam `grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`
+- **Song card** (`resources/views/partials/song-card.blade.php`): exibe badge do YouTube (ícone vermelho) quando `youtube_id` está preenchido
+- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup
+- **Fotos de artistas**: salvas em `storage/app/public/artists/{slug}.{ext}` · acessíveis via `Storage::disk('public')->url($artist->photo_path)` · symlink `public/storage` já criado
+- Controllers web usam eager loading `with(['artist', 'category'])` em todas as listagens
 
 ---
 
@@ -184,21 +251,32 @@ DatabaseSeeder
 | `rename(): Acesso negado` em `storage/framework/views` | `icacls storage /grant "*S-1-1-0:(OI)(CI)F" /T` |
 | Import travado em "Processando" | Queue worker não está rodando — iniciar com o comando acima |
 | Filament audit advisory `PKSA-n7tx-gkfb-14yj` | Ignorado em `composer.json > audit.ignore` |
+| `cURL error 60` (SSL) no WAMP | Resolvido no código via `withOptions(['verify' => storage_path('app/cacert.pem')])` — não editar php.ini |
+| Queue worker não pega mudanças de código | Reiniciar o worker — processo de longa duração cacheia PHP em memória |
+| MusicBrainz/YouTube retorna dados mas form não atualiza | O botão Enriquecer redireciona automaticamente após salvar |
 
 ---
 
 ## O que está pronto / pendente
 
-### ✅ Concluído (PROMPT 1)
+### ✅ Concluído
 - Migrations, Models, Seeders
 - API REST (11 endpoints)
 - Admin Filament (4 Resources + wizard de importação)
-- Importadores: Cifra Club TXT, ChordPro, MusicXML, ZIP batch
-- Queue job com `ProcessBatchImportJob`
-- Enriquecimento automático via MusicBrainz + Wikipedia
+- Importadores: Cifra Club TXT (com tablaturas), ChordPro (extensões `.pro .cho .chopro .crd .chord .chordpro`), MusicXML, ZIP batch
+- Queue job com `ProcessBatchImportJob` (MusicBrainz + TheAudioDB + YouTube + inferência de tom)
+- Enriquecimento automático na importação + botão Enriquecer manual em músicas e artistas
+- Foto do artista: baixada automaticamente do TheAudioDB na importação e no botão Enriquecer
+- Bio do artista em português via TheAudioDB (`strBiographyPT`)
+- Slug de músicas com desambiguação por artista (versões cover não conflitam)
+- Renderizador ChordPro com tablatura, seções, anotações e validação de acordes
+- Interface Web pública: player com transposição, auto-scroll, YouTube, diagramas
+- Home com grid responsivo (Novidades → Mais tocadas → Categorias)
+- Badge de vídeo nos cards de músicas
+- Indexes de performance no banco (`created_at`, `is_published`, `status`)
+- SSL configurado no código para funcionar independente do ambiente Windows
 
 ### ⏳ Pendente
-- Interface Web pública (Livewire + TailwindCSS) — player web
 - App Flutter (repo separado) — estrutura, telas, player, auto-scroll
 - GuitarPro GP5 converter (v1.1)
 - Auto-scroll por BPM (v1.1)

@@ -22,15 +22,34 @@
             <h1 class="text-3xl md:text-4xl font-black leading-tight">{{ $artist->name }}</h1>
             <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-muted">
                 @if($artist->genre)
-                <span>{{ $artist->genre }}</span>
+                <span>{{ genre_title($artist->genre) }}</span>
                 @endif
                 @if($artist->country)
-                <span>{{ $artist->country }}</span>
+                <span class="fi fi-{{ strtolower($artist->country) }}" title="{{ $artist->country }}"></span>
                 @endif
                 <span>{{ trans_choice('ui.artist.count', $songs->total(), ['count' => $songs->total()]) }}</span>
             </div>
-            @if($artist->bio)
-            <p class="mt-3 text-sm text-muted max-w-2xl leading-relaxed line-clamp-4">{{ strip_tags($artist->bio) }}</p>
+            @php
+                $bio = match(app()->getLocale()) {
+                    'en'    => $artist->bio_en ?? $artist->bio,
+                    'es'    => $artist->bio_es ?? $artist->bio,
+                    'fr'    => $artist->bio_fr ?? $artist->bio,
+                    default => $artist->bio,
+                };
+            @endphp
+            @if($bio)
+            <div x-data="{ expanded: false, clamped: false }"
+                 x-init="$nextTick(() => { clamped = $refs.bio.scrollHeight > $refs.bio.clientHeight })"
+                 class="mt-3 max-w-2xl">
+                <p x-ref="bio"
+                   class="text-sm text-muted leading-relaxed"
+                   :class="expanded ? '' : 'line-clamp-4'">{{ strip_tags($bio) }}</p>
+                <button x-show="clamped"
+                        @click="expanded = !expanded"
+                        class="mt-1 text-xs text-primary hover:text-secondary transition-colors">
+                    <span x-text="expanded ? '{{ __('ui.artist.bio_collapse') }}' : '{{ __('ui.artist.bio_expand') }}'"></span>
+                </button>
+            </div>
             @endif
         </div>
     </div>

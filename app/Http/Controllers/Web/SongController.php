@@ -31,7 +31,7 @@ class SongController extends Controller
                 ->where('artist_id', $song->artist_id)
                 ->orWhere('category_id', $song->category_id)
             )
-            ->with('artist')
+            ->with(['artist', 'category'])
             ->inRandomOrder()
             ->limit(4)
             ->get();

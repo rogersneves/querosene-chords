@@ -43,6 +43,8 @@ return [
     'artist' => [
         'meta_description' => 'Cifras de :name. :bio',
         'bio_fallback'     => 'Consulta todas las canciones.',
+        'bio_expand'       => 'Leer más',
+        'bio_collapse'     => 'Reducir',
         'all_chords'       => 'Todas las cifras',
         'no_chords'        => 'Aún no hay cifras disponibles.',
         'count'            => ':count cifra|:count cifras',

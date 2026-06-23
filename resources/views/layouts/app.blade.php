@@ -15,6 +15,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/css/flag-icons.min.css">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @stack('head')
 </head>
@@ -146,8 +147,8 @@
                         <path d="M12 2C8.5 6 6 9.5 6 13a6 6 0 0012 0c0-3.5-2.5-7-6-11zm0 16a4 4 0 01-4-4c0-2.2 1.4-4.5 4-7.4 2.6 2.9 4 5.2 4 7.4a4 4 0 01-4 4z"/>
                     </svg>
                     <span class="font-black text-[#F5F5F5]">Querosene <span class="text-primary">Chords</span></span>
+                    <span class="text-muted text-xs">{{ __('ui.app.tagline') }}</span>
                 </div>
-                <p class="text-muted text-xs">{{ __('ui.app.tagline') }}</p>
                 {{-- Seletor de idioma (mobile) --}}
                 <div class="flex gap-2 mt-2 md:hidden">
                     @foreach(['pt' => 'PT', 'en' => 'EN', 'es' => 'ES', 'fr' => 'FR'] as $code => $label)

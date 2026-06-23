@@ -10,6 +10,7 @@ use App\Services\Import\ChordDictionary;
 use App\Services\Import\FormatDetector;
 use App\Services\Import\MusicMetadataService;
 use App\Services\Import\ZipBatchImporter;
+use App\Services\YouTubeSearchService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -36,6 +37,7 @@ class ProcessBatchImportJob implements ShouldQueue
         ZipBatchImporter $batchImporter,
         FormatDetector $detector,
         MusicMetadataService $metadata,
+        YouTubeSearchService $youtubeSearch,
     ): void {
         $import = Import::findOrFail($this->importId);
         $import->update(['status' => 'processing']);
@@ -54,7 +56,7 @@ class ProcessBatchImportJob implements ShouldQueue
                 $format = $detector->detect($filePath);
                 $data   = $batchImporter->convertFile($filePath, $format);
 
-                $enrichment = $this->persistSong($data, $format, $metadata);
+                $enrichment = $this->persistSong($data, $format, $metadata, $youtubeSearch);
 
                 $log[] = array_merge(['file' => $filename, 'status' => 'ok'], $enrichment);
                 $importedCount++;
@@ -74,60 +76,60 @@ class ProcessBatchImportJob implements ShouldQueue
         $batchImporter->cleanup($this->tempDir);
     }
 
-    private function persistSong(array $data, string $format, MusicMetadataService $metadata): array
+    private function persistSong(array $data, string $format, MusicMetadataService $metadata, YouTubeSearchService $youtubeSearch): array
     {
-        // Prefer metadata from file; try to extract from content as fallback before filename
         $title      = $data['title']
             ?? $this->extractTitleFromContent($data['content'] ?? '')
             ?? $this->inferTitleFromFile($data);
         $artistName = $data['artist']
             ?? $this->extractArtistFromContent($data['content'] ?? '');
 
-        $slug     = Str::slug($title);
-        $existing = Song::where('slug', $slug)->first();
-
-        if ($existing && ! $this->overwriteDuplicates) {
-            throw new \RuntimeException("Duplicata ignorada: {$title}");
-        }
-
-        // ── Enrich via MusicBrainz (only when we have a real title) ────────────
-        // If title has artist embedded ("Africa - Toto"), try to split
+        // Split "Title - Artist" before enrichment so MusicBrainz gets the real title
         if ($artistName === null && str_contains($title, ' - ')) {
             [$titlePart, $artistPart] = array_map('trim', explode(' - ', $title, 2));
             $title      = $titlePart;
             $artistName = $artistPart;
         }
 
-        // Lookup song first (with or without artist) — result may fill missing artist
+        // ── MusicBrainz + TheAudioDB enrichment ───────────────────────────────
         $songMeta = $metadata->enrichSong($title, $artistName ?? '');
 
-        // If artist still unknown, use whatever MusicBrainz returned for the recording
         if ($artistName === null && ! empty($songMeta['artist'])) {
             $artistName = $songMeta['artist'];
         }
-
         $artistName = $artistName ?? 'Desconhecido';
 
         $artistMeta = $metadata->enrichArtist($artistName);
 
+        $photoPath = null;
+        if (! empty($artistMeta['photo_url'])) {
+            $photoPath = $metadata->downloadArtistPhoto($artistMeta['photo_url'], artist_slug($artistName));
+        }
+
         $artist = Artist::firstOrCreate(
-            ['slug' => Str::slug($artistName)],
+            ['slug' => artist_slug($artistName)],
             [
                 'name'           => $artistName,
                 'country'        => $artistMeta['country'] ?? 'BR',
                 'genre'          => $artistMeta['genre']   ?? null,
                 'bio'            => $artistMeta['bio']     ?? null,
+                'bio_en'         => $artistMeta['bio_en']  ?? null,
+                'bio_es'         => $artistMeta['bio_es']  ?? null,
+                'bio_fr'         => $artistMeta['bio_fr']  ?? null,
+                'photo_path'     => $photoPath,
                 'musicbrainz_id' => $artistMeta['musicbrainz_id'] ?? null,
             ]
         );
 
-        // If the artist already existed, silently fill any missing fields
         if (! $artist->wasRecentlyCreated && ! empty($artistMeta)) {
             $updates = array_filter([
                 'genre'          => $artist->genre          === null ? ($artistMeta['genre']  ?? null) : null,
                 'bio'            => $artist->bio            === null ? ($artistMeta['bio']    ?? null) : null,
+                'bio_en'         => $artist->bio_en         === null ? ($artistMeta['bio_en'] ?? null) : null,
+                'bio_es'         => $artist->bio_es         === null ? ($artistMeta['bio_es'] ?? null) : null,
+                'bio_fr'         => $artist->bio_fr         === null ? ($artistMeta['bio_fr'] ?? null) : null,
                 'musicbrainz_id' => $artist->musicbrainz_id === null ? ($artistMeta['musicbrainz_id'] ?? null) : null,
-                // Only overwrite country if we still have the default 'BR' and MB returned something different
+                'photo_path'     => $artist->photo_path     === null ? $photoPath : null,
                 'country'        => ($artist->country === 'BR' && isset($artistMeta['country']) && $artistMeta['country'] !== 'BR')
                     ? $artistMeta['country']
                     : null,
@@ -138,16 +140,39 @@ class ProcessBatchImportJob implements ShouldQueue
             }
         }
 
+        // ── Slug resolution — after artist is known ───────────────────────────
+        // Slug is calculated from the final (possibly split) title.
+        // Collision with a DIFFERENT artist generates "title-artistslug" instead
+        // of being rejected as a duplicate.
+        $baseSlug = Str::slug($title);
+        $existing = Song::where('slug', $baseSlug)->first();
+        $slug     = $baseSlug;
+
+        if ($existing) {
+            if ($existing->artist_id === $artist->id) {
+                // True duplicate: same song, same artist
+                if (! $this->overwriteDuplicates) {
+                    throw new \RuntimeException("Duplicata ignorada: {$title}");
+                }
+            } else {
+                // Same title, different artist — append artist slug to disambiguate
+                $slug     = $this->uniqueSlug($baseSlug . '-' . $artist->slug);
+                $existing = null;
+            }
+        }
+
+        $youtubeId = $data['youtube_id'] ?? $youtubeSearch->searchVideoId($title, $artistName);
+
         $songData = [
             'artist_id'      => $artist->id,
             'category_id'    => $this->defaultCategoryId,
             'title'          => $title,
             'slug'           => $slug,
-            'key'            => $data['key'] ?? null,
+            'key'            => $data['key'] ?? $this->inferKeyFromChords($data['content'] ?? ''),
             'year'           => $songMeta['year']  ?? ($data['year']  ?? null),
             'album'          => $songMeta['album'] ?? ($data['album'] ?? null),
             'musicbrainz_id' => $songMeta['musicbrainz_id'] ?? null,
-            'youtube_id'     => $data['youtube_id'] ?? null,
+            'youtube_id'     => $youtubeId,
             'is_published'   => $this->publishByDefault,
         ];
 
@@ -183,17 +208,29 @@ class ProcessBatchImportJob implements ShouldQueue
                 'Tom'       => $data['key']        ?? null,
                 'Ano'       => $data['year']       ?? null,
                 'Álbum'     => $data['album']      ?? null,
-                'YouTube'   => $data['youtube_id'] ?? null,
+                'YouTube'   => $youtubeId,
             ]),
             'from_api' => array_filter([
                 'Ano'           => $songMeta['year']            ?? null,
                 'Álbum'         => $songMeta['album']           ?? null,
                 'País (artista)'=> $artistMeta['country']       ?? null,
                 'Gênero'        => $artistMeta['genre']         ?? null,
+                'Foto'          => $photoPath                   ?? null,
                 'MBID música'   => $songMeta['musicbrainz_id']  ?? null,
                 'MBID artista'  => $artistMeta['musicbrainz_id']?? null,
             ]),
         ];
+    }
+
+    private function uniqueSlug(string $base): string
+    {
+        $slug   = $base;
+        $suffix = 2;
+        while (Song::where('slug', $slug)->exists()) {
+            $slug = "{$base}-{$suffix}";
+            $suffix++;
+        }
+        return $slug;
     }
 
     private function extractTitleFromContent(string $content): ?string
@@ -231,11 +268,52 @@ class ProcessBatchImportJob implements ShouldQueue
         return 'Sem título';
     }
 
-    public function failed(\Throwable $exception): void
+    /**
+     * Infer the key of the song from the chords used.
+     * Uses the most frequent chord root as the tonic, and determines major/minor
+     * by counting major vs minor chords.
+     */
+    private function inferKeyFromChords(string $content): ?string
     {
-        Import::where('id', $this->importId)->update([
-            'status' => 'failed',
-            'log'    => [['status' => 'error', 'message' => $exception->getMessage()]],
-        ]);
+        if (empty($content)) {
+            return null;
+        }
+
+        // Extract all [Chord] markers
+        preg_match_all('/\[([A-G][#b]?[^\]]*)\]/', $content, $matches);
+        if (empty($matches[1])) {
+            return null;
+        }
+
+        $chordRoots = [];
+        $minorChordCount = 0;
+        $majorChordCount = 0;
+
+        foreach ($matches[1] as $chord) {
+            if (preg_match('/^([A-G][#b]?)/', $chord, $m)) {
+                $chordRoots[] = $m[1];
+
+                // Count minor vs major chords (simple heuristic)
+                if (preg_match('/m(?!aj|M)/', $chord)) {
+                    $minorChordCount++;
+                } else {
+                    $majorChordCount++;
+                }
+            }
+        }
+
+        if (empty($chordRoots)) {
+            return null;
+        }
+
+        // Most frequent root is the tonic
+        $rootCounts = array_count_values($chordRoots);
+        arsort($rootCounts);
+        $tonic = array_key_first($rootCounts);
+
+        // Determine mode: if more minor chords, use minor
+        $mode = ($minorChordCount > $majorChordCount) ? 'm' : '';
+
+        return $tonic . $mode;
     }
 }

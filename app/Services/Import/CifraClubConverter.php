@@ -62,7 +62,7 @@ class CifraClubConverter
             }
         }
 
-        $i = 0;
+        $i = 1; // Skip first line (already used for title/artist extraction)
         $total = count($lines);
 
         while ($i < $total) {
@@ -98,11 +98,16 @@ class CifraClubConverter
                     $i++;
                     continue;
                 }
+                // Exit tab block: close current section and reset
                 $inTab = false;
+                if ($currentSection === 'tab') {
+                    $chordProLines[] = "{end_of_tab}";
+                    $currentSection = null;
+                }
             }
 
-            // Chord dictionary at footer (Am7 = X 0 2 0 1 0)
-            if (preg_match('/^([A-G][#b]?(?:m|M|maj|min|dim|aug|sus|add)?[0-9]*)\s*=\s*([XxNn0-9\s]+)$/', $trimmed, $m)) {
+            // Chord dictionary at footer (Am7 = X 0 2 0 1 0, F° = X X 3 2 1 1, Am/C = X 3 2 2 5 X)
+            if (preg_match('/^([A-G][#b]?(?:°|m(?:aj)?|M(?:aj)?|dim|aug|sus[24]?|add[0-9]*)?[0-9]*M?(?:\([^)]+\))?(?:\/[A-G][#b]?)?)\s*=\s*([XxNn0-9\s]+)$/u', $trimmed, $m)) {
                 $this->parseDiagram($m[1], $m[2], $diagrams);
                 $i++;
                 continue;
@@ -133,6 +138,12 @@ class CifraClubConverter
             if ($this->detector->isChordLine($line) && isset($lines[$i + 1])) {
                 $nextLine = $lines[$i + 1];
 
+                // Skip pure chord lines that appear within tab blocks (they're just indicators)
+                if ($inTab) {
+                    $i++;
+                    continue;
+                }
+
                 if (!$this->detector->isChordLine($nextLine) && !preg_match('/^[EBGDAe]\|/', trim($nextLine))) {
                     $merged = $this->mergeChordAndLyric($line, $nextLine);
                     $chordProLines[] = $merged;
@@ -140,7 +151,39 @@ class CifraClubConverter
                     continue;
                 }
 
-                // Chord line with no lyric below — emit as standalone
+                // Collect consecutive pure chord lines and combine into annotation
+                $chordLines = [$line];
+                $j = $i + 1;
+                while ($j < $total) {
+                    $nextTrimmed = trim($lines[$j]);
+                    if ($this->detector->isChordLine($lines[$j]) && empty($nextTrimmed) === false) {
+                        $chordLines[] = $lines[$j];
+                        $j++;
+                    } elseif (empty($nextTrimmed)) {
+                        // Skip blank line
+                        $j++;
+                    } else {
+                        break;
+                    }
+                }
+
+                // If multiple chord lines, combine with section label; else emit single line
+                if (count($chordLines) > 1) {
+                    $sectionLabel = ucfirst(str_replace(['tab', 'solo'], '', $currentSection ?? 'verse'));
+                    $allChords = [];
+                    foreach ($chordLines as $cl) {
+                        preg_match_all('/([A-G][#b]?(?:°|m(?:aj)?|M(?:aj)?|dim|aug|sus[24]?|add[0-9]*)?[0-9]*M?(?:\([^)]+\))?(?:\/[A-G][#b]?)?)/', $cl, $m);
+                        $allChords = array_merge($allChords, $m[1]);
+                    }
+                    if (!empty($allChords)) {
+                        $annotationLine = $sectionLabel . ': ' . implode(' ', array_map(fn($c) => "[{$c}]", $allChords));
+                        $chordProLines[] = $annotationLine;
+                    }
+                    $i = $j;
+                    continue;
+                }
+
+                // Single chord line — emit as standalone
                 $chords = $this->extractChordsInline($line, '');
                 $chordProLines[] = $chords;
                 $i++;

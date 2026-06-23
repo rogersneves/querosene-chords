@@ -5,9 +5,13 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\SongResource\Pages;
 use App\Filament\Resources\SongResource\RelationManagers\ChordsRelationManager;
 use App\Models\Song;
+use App\Services\Import\MusicMetadataService;
+use App\Services\YouTubeSearchService;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
+use Filament\Support\Enums\Alignment;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Str;
@@ -25,6 +29,78 @@ class SongResource extends Resource
     {
         return $form->schema([
             Forms\Components\Section::make('Informações')
+                ->footerActions([
+                    Forms\Components\Actions\Action::make('enrich')
+                        ->label('Enriquecer')
+                        ->icon('heroicon-o-sparkles')
+                        ->color('gray')
+                        ->size('sm')
+                        ->hidden(fn ($record) => $record === null)
+                        ->action(function (Song $record, \Livewire\Component $livewire): void {
+                            $metadata = app(MusicMetadataService::class);
+                            $youtube  = app(YouTubeSearchService::class);
+
+                            $artistName = $record->artist->name;
+                            $title      = $record->title;
+
+                            // Limpa todos os caches para forçar busca fresca
+                            \Illuminate\Support\Facades\Cache::forget('mb_recording_' . md5(mb_strtolower("{$artistName}:{$title}")));
+                            \Illuminate\Support\Facades\Cache::forget('mb_artist_' . md5(mb_strtolower($artistName)));
+                            \Illuminate\Support\Facades\Cache::forget('tadb_artist_' . md5(mb_strtolower($artistName)));
+
+                            $songMeta   = $metadata->enrichSong($title, $artistName);
+                            $artistMeta = $metadata->enrichArtist($artistName);
+
+                            $songUpdates = [];
+                            if (!empty($songMeta['year']))            $songUpdates['year']           = $songMeta['year'];
+                            if (!empty($songMeta['album']))           $songUpdates['album']          = $songMeta['album'];
+                            if (!empty($songMeta['musicbrainz_id'])) $songUpdates['musicbrainz_id'] = $songMeta['musicbrainz_id'];
+
+                            // Sempre busca YouTube ao enriquecer manualmente
+                            $youtubeId = $youtube->searchVideoId($title, $artistName);
+                            if ($youtubeId) $songUpdates['youtube_id'] = $youtubeId;
+
+                            // Download artist photo if TheAudioDB returned one
+                            if (! empty($artistMeta['photo_url']) && empty($record->artist->photo_path)) {
+                                $photoPath = $metadata->downloadArtistPhoto(
+                                    $artistMeta['photo_url'],
+                                    $record->artist->slug
+                                );
+                            } else {
+                                $photoPath = null;
+                            }
+
+                            $artistUpdates = [];
+                            if (!empty($artistMeta['genre']))           $artistUpdates['genre']          = $artistMeta['genre'];
+                            if (!empty($artistMeta['bio']))             $artistUpdates['bio']             = $artistMeta['bio'];
+                            if (!empty($artistMeta['bio_en']))          $artistUpdates['bio_en']          = $artistMeta['bio_en'];
+                            if (!empty($artistMeta['bio_es']))          $artistUpdates['bio_es']          = $artistMeta['bio_es'];
+                            if (!empty($artistMeta['bio_fr']))          $artistUpdates['bio_fr']          = $artistMeta['bio_fr'];
+                            if (!empty($artistMeta['musicbrainz_id'])) $artistUpdates['musicbrainz_id']  = $artistMeta['musicbrainz_id'];
+                            if (!empty($artistMeta['country']))         $artistUpdates['country']         = $artistMeta['country'];
+                            if ($photoPath)                             $artistUpdates['photo_path']      = $photoPath;
+
+                            if (!empty($songUpdates))   $record->update($songUpdates);
+                            if (!empty($artistUpdates)) $record->artist->update($artistUpdates);
+
+                            $count  = count($songUpdates) + count($artistUpdates);
+                            $labels = array_merge(
+                                array_keys($songUpdates),
+                                array_map(fn ($k) => "artista.$k", array_keys($artistUpdates))
+                            );
+
+                            Notification::make()
+                                ->title($count > 0 ? "{$count} campo(s) atualizado(s)" : 'Nenhum dado novo encontrado')
+                                ->body($count > 0 ? implode(', ', $labels) : null)
+                                ->color($count > 0 ? 'success' : 'warning')
+                                ->send();
+
+                            if ($count > 0) {
+                                $livewire->redirect(static::getUrl('edit', ['record' => $record]), navigate: true);
+                            }
+                        }),
+                ])
+                ->footerActionsAlignment(Alignment::End)
                 ->schema([
                     Forms\Components\TextInput::make('title')
                         ->label('Título')
@@ -130,6 +206,15 @@ class SongResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query
+                ->select([
+                    'songs.id', 'songs.title', 'songs.slug', 'songs.key',
+                    'songs.difficulty', 'songs.album', 'songs.views',
+                    'songs.is_published', 'songs.artist_id', 'songs.category_id',
+                    'songs.created_at',
+                ])
+                ->with(['artist:id,name', 'category:id,name,color'])
+            )
             ->columns([
                 Tables\Columns\TextColumn::make('title')
                     ->label('Título')

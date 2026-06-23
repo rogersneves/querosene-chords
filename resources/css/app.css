@@ -12,6 +12,10 @@
     --color-muted:     #888888;
 }
 
+@layer base {
+    a, button { cursor: pointer; }
+}
+
 /* ── ChordPro Player ──────────────────────────────────── */
 .cp-content {
     font-family: 'Courier New', Courier, monospace;

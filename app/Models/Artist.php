@@ -5,21 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Str;
 
 class Artist extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'name', 'slug', 'bio', 'photo_path', 'country', 'genre', 'musicbrainz_id',
+        'name', 'slug', 'bio', 'bio_en', 'bio_es', 'bio_fr',
+        'photo_path', 'country', 'genre', 'musicbrainz_id',
     ];
 
     protected static function booted(): void
     {
         static::creating(function (Artist $artist) {
             if (empty($artist->slug)) {
-                $artist->slug = Str::slug($artist->name);
+                $artist->slug = artist_slug($artist->name);
             }
         });
     }

@@ -43,6 +43,8 @@ return [
     'artist' => [
         'meta_description' => 'Tablatures de :name. :bio',
         'bio_fallback'     => 'Découvrez toutes les chansons.',
+        'bio_expand'       => 'Lire la suite',
+        'bio_collapse'     => 'Réduire',
         'all_chords'       => 'Toutes les tablatures',
         'no_chords'        => "Aucune tablature disponible pour l'instant.",
         'count'            => ':count tablature|:count tablatures',

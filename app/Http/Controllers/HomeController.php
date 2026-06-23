@@ -16,7 +16,7 @@ class HomeController extends Controller
             ->limit(8)
             ->get();
 
-        $recent = Song::with('artist')
+        $recent = Song::with(['artist', 'category'])
             ->where('is_published', true)
             ->latest()
             ->limit(10)
