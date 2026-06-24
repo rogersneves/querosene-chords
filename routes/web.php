@@ -16,6 +16,7 @@ use App\Livewire\SearchPage;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', HomeController::class)->name('home');
+Route::get('/calculadora-de-capo', fn() => view('tools.capo'))->name('tools.capo');
 Route::get('/busca', SearchPage::class)->name('search');
 Route::get('/explorar', [SongBrowserController::class, 'index'])->name('songs.browse');
 Route::get('/artistas/{artist:slug}', [ArtistController::class, 'show'])->name('artists.show');

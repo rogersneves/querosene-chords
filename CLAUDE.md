@@ -277,10 +277,12 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 
 ### ChordDiagramSvg
 
-- Renderiza diagramas de acordes como SVG inline (sem JavaScript)
+- Renderiza diagramas de acordes como **HTML table** (não SVG) — DomPDF renderiza tabelas `display:inline-block` corretamente
 - Entrada: nome do acorde, padrão de 6 chars do `ChordDictionary` (ex.: `x32010`), número da cejilha
-- Saída: `<svg>` 60×69 px com grid de casa, marcadores x/o, cejilha (barra grossa), pontos de dedo
-- Posições altas (casas > 4): grid desloca e exibe número da casa à esquerda
+- Saída: `<div style="display:inline-block">` contendo `<table style="width:66pt">` com linhas para nome, indicadores x/o, cásca (nut) e 4 casas
+- Pontos de dedo: `background-color:#1a1a1a` no `<td>` — **não** usar caracteres Unicode (U+25CF não está no encoding das fontes embutidas do DomPDF)
+- Cejilha (barre): todas as células da linha recebem fundo escuro
+- Posições altas (casa > 4): grid desloca e exibe número da casa à esquerda em texto `{n}a`
 
 ### PdfController
 
@@ -290,9 +292,25 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 
 ### Templates PDF
 
-- `resources/views/pdf/song.blade.php`: header (título, artista, tom/álbum/ano/dificuldade), conteúdo ChordPro via `{!! $html !!}`, seção de diagramas SVG no rodapé, watermark
-- `resources/views/pdf/setlist.blade.php`: capa com índice (título, artista, tom por linha) + uma página A4 por música com `page-break-after: always`; mesma estrutura de conteúdo do template de cifra
-- CSS dos templates: Arial/Helvetica, fundo branco, acordes em laranja `#e65c00`, seções com borda laranja; usa `display: inline-block` para pares acorde+letra (compatível com DomPDF v2+); sem flexbox/grid (suporte limitado em DomPDF)
+- `resources/views/pdf/song.blade.php`: header (título, artista, tom/álbum/ano/dificuldade), conteúdo ChordPro via `{!! $html !!}`, seção de diagramas no rodapé, watermark
+- `resources/views/pdf/setlist.blade.php`: capa com índice de duas colunas (número, tom, título, artista) + uma página A4 por música com `page-break-after: always`; mesma estrutura de conteúdo do template de cifra
+- CSS dos templates: Arial/Helvetica, fundo branco, acordes em laranja `#e65c00`, seções com borda laranja; usa `display:inline-block` para pares acorde+letra e para diagramas; sem flexbox/grid (suporte limitado em DomPDF)
+- **Margens**: `body { margin: 1.8cm 2.2cm; }` — `@page { margin }` não funciona no DomPDF mesmo com `default_media_type=print` (ver gotchas). Páginas 2+ do caderno usam `padding-top: 1.8cm` na `.song-page`
+- **Diagramas**: cada diagrama tem `page-break-inside: avoid` no wrapper `<div>` e `.diagrams-section` também tem `page-break-inside: avoid` para evitar cortes entre páginas
+- `config/dompdf.php` publicado com `default_media_type => 'print'`
+
+### Limitações conhecidas do DomPDF (v2 / barryvdh v3)
+
+| Limitação | Workaround |
+|---|---|
+| `@page { margin }` ignorado | Usar `body { margin }` para todas as páginas |
+| Tabelas aninhadas (table dentro de td) não renderizam | Usar tabelas como filhos diretos de `<div>` |
+| Tabela plana com muitas colunas (6+ por acorde) não renderiza | Quebrar em tabelas individuais por diagrama |
+| `float:left` em divs que contêm tabelas não renderiza | Usar `display:inline-block` no wrapper |
+| `display:inline-table` não suportado | Usar `display:inline-block` com tabela interna |
+| `border-spacing` em tabelas ignorado | Usar `margin` ou `padding` nas células |
+| U+25CF (●) e outros símbolos Unicode não aparecem | Usar `background-color` em `<td>` para pontos |
+| Fontes externas (Google Fonts) não carregam | Usar Arial/Helvetica (fontes PDF padrão) |
 
 ---
 
@@ -352,8 +370,9 @@ Registrados via `composer.json > autoload > files`.
 - **Home** (`resources/views/home.blade.php`): ordem das seções — Novidades → Mais tocadas → Categorias; todas as seções usam `grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`
 - **Explorar** (`/explorar`): chord picker com 32 acordes comuns; selecionar acordes e buscar retorna apenas músicas cujo `chord_list` é subconjunto dos acordes selecionados
 - **Song card** (`resources/views/partials/song-card.blade.php`): exibe badge do YouTube (ícone vermelho) quando `youtube_id` está preenchido; tem `data-title="{{ $song->title }}"` para o modal global ler o título
-- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup, botão **Salvar no Caderno**; barra de controles com Vídeo + PDF + Foco agrupados à direita (PDF e Foco ocultos em modo embed)
-- **Modo embed** (`?embed=1`): player sem nav/footer, `sticky top-0`, sem botão Salvar, sem sugestões, sem botão Foco; layout `layouts/embed.blade.php` com `@livewireScripts` explícito (necessário para Alpine.js sem componente Livewire na página)
+- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup, botão **Salvar no Caderno**; barra de controles à direita com **PDF** (visível em todos os modos, auth-aware) + **Vídeo** + **Foco** (Foco oculto em embed)
+- **Botão PDF auth-aware**: usuários autenticados recebem `<a target="_blank">` direto para o PDF; guests recebem botão com popover Alpine.js mostrando mensagem e links **Entrar** / **Criar conta** com `target="_top"` (navega o frame pai quando dentro do modal iframe)
+- **Modo embed** (`?embed=1`): player sem nav/footer, `sticky top-0`, sem botão Salvar, sem sugestões, sem botão Foco; botão PDF visível (com gate de auth); layout `layouts/embed.blade.php` com `@livewireScripts` explícito (necessário para Alpine.js sem componente Livewire na página)
 - **Modal global de cifra** (`layouts/app.blade.php`): qualquer link `/cifras/` no site é interceptado por um listener JS global; a cifra abre em iframe fullscreen com `?embed=1`; `z-index:200` garante sobreposição ao header; `overflow-hidden` no `<html>` evita dupla barra de rolagem; Ctrl/Cmd+clique abre normalmente (nova aba)
 - **Artista** (`resources/views/artist/show.blade.php`): bandeira do país via `fi fi-{iso2}`, bio multilíngue com expand/collapse Alpine.js (botão oculto quando texto não é cortado), gênero via `genre_title()`
 - **Fotos de artistas**: salvas em `storage/app/public/artists/{slug}.{ext}` · acessíveis via `Storage::disk('public')->url($artist->photo_path)` · symlink `public/storage` já criado
@@ -397,8 +416,11 @@ DatabaseSeeder
 | Modal de cifra aparece atrás do header | Modal usa `style="z-index:200"` inline — não substituir por classe Tailwind (pode não compilar corretamente) |
 | Dupla barra de rolagem no modal | `overflow-hidden` é aplicado ao `<html>` ao abrir e removido ao fechar — os três caminhos de fechar (X, Esc, `open=false`) devem todos remover a classe |
 | Botão PDF abre no modal | O link usa `target="_blank"`, que já impede a interceptação do listener JS (só intercepta sem `target="_blank"`) |
-| DomPDF não renderiza flexbox/grid | Usar `display: inline-block` e `float` nos templates PDF — DomPDF v2+ suporta inline-block |
-| SVG de diagrama não aparece no PDF | DomPDF suporta SVG inline na v2+; não usar SVG externo via `<img src="...">` |
+| DomPDF não renderiza flexbox/grid | Usar `display:inline-block` nos templates PDF — DomPDF v2+ suporta inline-block |
+| `@page { margin }` ignorado no DomPDF | Usar `body { margin: 1.8cm 2.2cm; }` — funciona em todas as páginas; `padding-top` por página nos cadernos |
+| Diagramas de acorde cortados entre páginas no PDF | `page-break-inside:avoid` na `.diagrams-section` e em cada wrapper `<div>` de diagrama |
+| Pontos de acorde aparecem como `?` no PDF | U+25CF não está no encoding DomPDF — usar `background-color:#1a1a1a` no `<td>` em vez de `&#9679;` |
+| SVG de diagrama não aparece no PDF | ChordDiagramSvg usa HTML tables (não SVG) — não tentar refatorar para SVG |
 
 ---
 
@@ -422,7 +444,8 @@ DatabaseSeeder
 - **Auth pública**: cadastro, login com MFA por email (código fixo `123456` em dev), dispositivo confiável por 30 dias
 - **Modal global de cifra**: todas as cifras do site abrem em iframe fullscreen ao clicar; Ctrl+clique abre em nova aba normalmente
 - **Modo embed** (`?embed=1`): layout mínimo sem nav/footer para o iframe do modal
-- **Exportação PDF**: cifra individual (`GET /cifras/{slug}/pdf`, pública) e caderno completo (`GET /caderno/{id}/pdf`, requer auth); diagramas de acordes SVG gerados server-side por `ChordDiagramSvg`; capa com índice no PDF de caderno
+- **Exportação PDF**: cifra individual (`GET /cifras/{slug}/pdf`, pública) e caderno completo (`GET /caderno/{id}/pdf`, requer auth); diagramas de acordes gerados server-side por `ChordDiagramSvg` (HTML tables, não SVG); capa com índice de 2 colunas no PDF de caderno; margens via `body { margin }` (não `@page`)
+- **Botão PDF no modal**: visível em todos os modos (embed inclusive); autenticados → download direto; guests → popover com links para login/cadastro (`target="_top"` para navegar o frame pai)
 - Bandeira do país na página do artista (via `flag-icons`)
 - Indexes de performance no banco
 - SSL configurado no código para funcionar independente do ambiente Windows

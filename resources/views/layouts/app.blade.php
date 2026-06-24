@@ -90,6 +90,14 @@
                 {{ __('ui.nav.browse') }}
             </a>
 
+            <a href="{{ route('tools.capo') }}"
+               class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[#888] hover:text-[#F5F5F5] hover:bg-white/5 transition-colors">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9.05 3.44L5.06 7.43c-.59.59-.59 1.54 0 2.12l1.41 1.41L4.1 13.34c-1.56 1.56-1.56 4.09 0 5.66l1 1c1.56 1.56 4.09 1.56 5.65 0l2.38-2.38 1.41 1.41c.59.59 1.54.59 2.12 0l3.99-3.99c.59-.59.59-1.54 0-2.12L9.05 3.44zm-.71 14.14c-.78.78-2.05.78-2.83 0l-1-1c-.78-.78-.78-2.05 0-2.83l2.37-2.37 3.83 3.83-2.37 2.37zm7.78-5.66L12.24 16l-4.24-4.24 3.83-3.83 4.29 4.19z"/>
+                </svg>
+                Capo
+            </a>
+
             {{-- Caderno / Auth --}}
             @auth
             <a href="{{ route('setlists.index') }}"
@@ -193,6 +201,7 @@
                 <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.about') }}</a>
                 <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.contact') }}</a>
                 <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.privacy') }}</a>
+                <a href="{{ route('tools.capo') }}" class="hover:text-[#F5F5F5] transition-colors">Calculadora de Capo</a>
                 <a href="{{ route('sitemap') }}" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.sitemap') }}</a>
             </nav>
         </div>
