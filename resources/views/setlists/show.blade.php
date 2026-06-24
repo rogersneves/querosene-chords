@@ -2,6 +2,12 @@
 @section('title', $setlist->name . ' — ' . __('ui.setlist.my_title'))
 
 @section('content')
+<div x-data="{
+    openSong(url, title) {
+        window.dispatchEvent(new CustomEvent('open-song-modal', { detail: { url, title } }));
+    }
+}">
+
 <div class="max-w-3xl mx-auto px-4 py-8">
 
     {{-- Header --}}
@@ -15,6 +21,21 @@
                 {{ trans_choice('ui.setlist.songs_count', $setlist->songs->count(), ['count' => $setlist->songs->count()]) }}
             </p>
         </div>
+
+        {{-- Ações (PDF + Rename) --}}
+        <div class="flex items-start gap-2 shrink-0">
+
+        {{-- Exportar PDF --}}
+        @if($setlist->songs->isNotEmpty())
+        <a href="{{ route('setlists.pdf', $setlist) }}" target="_blank" rel="noopener"
+           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-white/5 hover:bg-white/10 transition-colors text-muted"
+           title="{{ __('ui.setlist.pdf_title') }}">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+            </svg>
+            {{ __('ui.setlist.pdf_btn') }}
+        </a>
+        @endif
 
         {{-- Rename --}}
         <div x-data="{ editing: false }" class="shrink-0">
@@ -31,6 +52,8 @@
                         class="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold">OK</button>
             </form>
         </div>
+
+        </div>{{-- /ações --}}
     </div>
 
     @if(session('success'))
@@ -40,18 +63,43 @@
     @endif
 
     {{-- Song list --}}
+    @php
+        $diffColors = ['iniciante'=>'#22c55e','intermediário'=>'#f59e0b','avançado'=>'#ef4444'];
+        $diffKeys   = ['iniciante'=>'beginner','intermediário'=>'intermediate','avançado'=>'advanced'];
+    @endphp
     @forelse($setlist->songs as $song)
     <div class="bg-surface rounded-xl border border-white/5 px-4 py-3 mb-2 flex items-center gap-3">
+        {{-- Título + artista --}}
         <div class="min-w-0 flex-1">
-            <a href="{{ route('songs.show', $song) }}"
-               class="font-semibold text-sm hover:text-primary transition-colors truncate block">
+            <button
+                @click="openSong('{{ route('songs.show', $song) }}', '{{ addslashes($song->title) }}')"
+                class="font-semibold text-sm hover:text-primary transition-colors truncate block text-left w-full">
                 {{ $song->title }}
-            </a>
+            </button>
             <p class="text-xs text-muted truncate">{{ $song->artist->name }}</p>
         </div>
-        @if($song->key)
-        <span class="text-xs font-mono text-primary shrink-0">{{ $song->key }}</span>
-        @endif
+        {{-- Tom --}}
+        <div class="hidden sm:block w-10 shrink-0">
+            @if($song->key)
+            <span class="text-xs font-mono text-primary">{{ $song->key }}</span>
+            @endif
+        </div>
+        {{-- Badges --}}
+        <div class="hidden sm:flex items-center gap-1.5 w-52 shrink-0">
+            @if($song->category)
+            <span class="text-xs rounded px-2 py-0.5 font-medium"
+                  style="background:{{ $song->category->color }}22;color:{{ $song->category->color }}">
+                {{ $song->category->name }}
+            </span>
+            @endif
+            @if($song->difficulty && isset($diffColors[$song->difficulty]))
+            <span class="text-xs rounded px-2 py-0.5 font-medium"
+                  style="background:{{ $diffColors[$song->difficulty] }}22;color:{{ $diffColors[$song->difficulty] }}">
+                {{ __('ui.difficulty.' . $diffKeys[$song->difficulty]) }}
+            </span>
+            @endif
+        </div>
+        {{-- Remover --}}
         <form method="POST" action="{{ route('setlists.remove-song', [$setlist, $song]) }}">
             @csrf @method('DELETE')
             <button type="submit" title="{{ __('ui.setlist.remove_song') }}"
@@ -71,6 +119,8 @@
         </a>
     </div>
     @endforelse
+
+</div>
 
 </div>
 @endsection

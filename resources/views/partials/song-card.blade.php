@@ -3,6 +3,7 @@ $diffColors = ['iniciante' => '#22c55e', 'intermediário' => '#f59e0b', 'avança
 $color = $diffColors[$song->difficulty] ?? '#888';
 @endphp
 <a href="{{ route('songs.show', $song) }}"
+   data-title="{{ $song->title }}"
    class="block bg-surface rounded-xl p-4 hover:bg-white/5 border border-white/5 hover:border-white/10 transition-all group">
     <div class="flex items-start justify-between gap-2 mb-1">
         <h3 class="font-bold text-[#F5F5F5] text-sm leading-tight truncate group-hover:text-primary transition-colors">

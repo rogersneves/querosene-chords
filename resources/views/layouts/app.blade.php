@@ -203,5 +203,71 @@
 </footer>
 
 @stack('scripts')
+
+{{-- ── Modal global de cifra ───────────────────────────────────────── --}}
+<div
+    id="song-modal"
+    x-data="{ open: false, src: '', title: '' }"
+    @open-song-modal.window="
+        title = $event.detail.title;
+        src   = $event.detail.url + ($event.detail.url.includes('?') ? '&' : '?') + 'embed=1';
+        open  = true;
+        document.documentElement.classList.add('overflow-hidden')
+    "
+    @keydown.escape.window="if(open){ open = false; src = ''; document.documentElement.classList.remove('overflow-hidden') }"
+    x-show="open"
+    x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-150"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    class="fixed inset-0 flex flex-col bg-canvas"
+    style="display:none; z-index:200"
+>
+    <div class="flex items-center gap-3 px-4 h-12 border-b border-white/10 bg-surface shrink-0">
+        <button @click="open = false; src = ''; document.documentElement.classList.remove('overflow-hidden')"
+                class="p-1.5 rounded-lg hover:bg-white/10 transition-colors shrink-0 text-[#F5F5F5]">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+        <span class="text-sm font-semibold truncate" x-text="title"></span>
+        <a :href="src.replace(/[?&]embed=1/, '')" target="_blank" rel="noopener"
+           class="ml-auto p-1.5 rounded-lg text-muted hover:text-[#F5F5F5] hover:bg-white/10 transition-colors shrink-0"
+           title="Abrir em nova aba">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/>
+            </svg>
+        </a>
+    </div>
+    <iframe
+        :src="open ? src : 'about:blank'"
+        class="flex-1 w-full border-0"
+        frameborder="0"
+        allow="autoplay; encrypted-media; fullscreen"
+        allowfullscreen
+    ></iframe>
+</div>
+
+<script>
+document.addEventListener('click', function (e) {
+    const link = e.target.closest('a[href]');
+    if (!link) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    if (link.target === '_blank') return;
+    if (!link.href.includes('/cifras/')) return;
+
+    e.preventDefault();
+
+    const title = link.dataset.title
+        || link.querySelector('h3, [class*="font-bold"], [class*="font-semibold"]')?.textContent.trim()
+        || link.textContent.trim().split('\n')[0].trim();
+
+    window.dispatchEvent(new CustomEvent('open-song-modal', {
+        detail: { url: link.href, title }
+    }));
+});
+</script>
 </body>
 </html>

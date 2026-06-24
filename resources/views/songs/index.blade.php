@@ -44,7 +44,10 @@
                                disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90">
                     {{ __('ui.songs.picker_search') }}
                 </button>
-                <span x-show="chosen.length > 0" x-text="'{{ __('ui.songs.picker_count') }}'.replace(':n', chosen.length)"
+                <span x-show="chosen.length > 0"
+                      data-sg="{{ trans_choice('ui.songs.picker_count', 1, ['n' => '__']) }}"
+                      data-pl="{{ trans_choice('ui.songs.picker_count', 2, ['n' => '__']) }}"
+                      x-text="(chosen.length === 1 ? $el.dataset.sg : $el.dataset.pl).replace('__', chosen.length)"
                       class="text-xs text-muted"></span>
             </form>
         </div>

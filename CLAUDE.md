@@ -56,6 +56,7 @@ Invoke-WebRequest -Uri "https://curl.se/ca/cacert.pem" -OutFile "storage\app\cac
 
 - **Laravel 13** + **Filament 3.3** + **Livewire 3** + **MySQL**
 - **Laravel Sanctum 4** para auth da API
+- **barryvdh/laravel-dompdf** para exportação de PDF (cifras e cadernos)
 - **Queue driver:** `database` (sem Redis) — tabela `jobs`
 - **Filesystem:** `public` disk para uploads de produção; `local` para temporários de importação
 - **CORS:** aberto a todas as origens (`allowed_origins=['*']`) em `config/cors.php`
@@ -118,26 +119,32 @@ Separada do admin Filament. Usa a mesma tabela `users` — o acesso ao painel é
 
 - **Fluxo**: credenciais válidas → verifica cookie de dispositivo confiável → se não confiável, envia código de 6 dígitos para o email → `/verificar`
 - **Código**: 6 dígitos, expira em 10 minutos, armazenado como `bcrypt()` em `mfa_codes`
+- **Dev bypass**: `app()->isProduction()` falso → código fixo `123456` (não envia email)
 - **Dispositivo confiável**: checkbox "não pedir por 30 dias" → salva `hash('sha256', $token)` em `mfa_trusted_devices` + cookie httponly `mfa_device_token` por 30 dias
 - **Rate limit**: 5 tentativas erradas / 5 min por usuário; 3 reenvios / 5 min
 - **Email**: `App\Mail\MfaCodeMail` → view `resources/views/emails/mfa_code.blade.php`
 - **Config**: definir `MAIL_MAILER`, `MAIL_HOST`, etc. no `.env`. Para desenvolvimento local usar `MAIL_MAILER=log` — código aparece em `storage/logs/laravel.log`
 
-### Caderno de Setlists — `/caderno`
+### Cadernos (`/caderno`)
 
 Requer autenticação. Todas as rotas prefixadas com `/caderno` e agrupadas com middleware `auth`.
 
 | Rota | Descrição |
 |---|---|
-| `GET /caderno` | Lista setlists do usuário |
-| `POST /caderno` | Cria nova setlist |
-| `GET /caderno/{setlist}` | Detalhe da setlist |
-| `DELETE /caderno/{setlist}` | Exclui setlist |
-| `PATCH /caderno/{setlist}/renomear` | Renomeia setlist |
+| `GET /caderno` | Lista cadernos do usuário |
+| `POST /caderno` | Cria novo caderno |
+| `GET /caderno/{setlist}` | Detalhe do caderno |
+| `DELETE /caderno/{setlist}` | Exclui caderno |
+| `PATCH /caderno/{setlist}/renomear` | Renomeia caderno |
 | `POST /caderno/{setlist}/toggle` | Adiciona/remove música (JSON, sem reload) |
 | `DELETE /caderno/{setlist}/musica/{song}` | Remove música |
+| `GET /caderno/{setlist}/pdf` | Exporta caderno completo como PDF |
 
-Na página de cada cifra: botão **Salvar** (ícone marcador) → dropdown com setlists do usuário. Usuário não logado vê botão cinza que redireciona para login.
+Na página de cada cifra: botão **Salvar** (ícone marcador) → dropdown com cadernos do usuário. Usuário não logado vê botão cinza que redireciona para login.
+
+**Limite de músicas**: máximo 30 por caderno. O `toggle` retorna `{added: false, error: 'limit'}` com HTTP 422 quando o limite é atingido; o JS do player exibe `alert()` com a mensagem traduzida (`ui.setlist.limit_reached`).
+
+**Detalhe do caderno** (`setlists/show.blade.php`): lista de músicas em colunas de largura fixa — título+artista (`flex-1`), tom (`w-10`), badges categoria+dificuldade (`w-52`), botão remover. Clicar em uma música abre o modal global de cifra (não navega para outra página). Botão **Exportar PDF** aparece no header quando o caderno tem ao menos uma música.
 
 ---
 
@@ -316,13 +323,15 @@ Registrados via `composer.json > autoload > files`.
 
 - **Home** (`resources/views/home.blade.php`): ordem das seções — Novidades → Mais tocadas → Categorias; todas as seções usam `grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`
 - **Explorar** (`/explorar`): chord picker com 32 acordes comuns; selecionar acordes e buscar retorna apenas músicas cujo `chord_list` é subconjunto dos acordes selecionados
-- **Song card** (`resources/views/partials/song-card.blade.php`): exibe badge do YouTube (ícone vermelho) quando `youtube_id` está preenchido
-- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup, botão **Salvar na Setlist**
+- **Song card** (`resources/views/partials/song-card.blade.php`): exibe badge do YouTube (ícone vermelho) quando `youtube_id` está preenchido; tem `data-title="{{ $song->title }}"` para o modal global ler o título
+- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup, botão **Salvar no Caderno**; barra de controles com Vídeo + PDF + Foco agrupados à direita (PDF e Foco ocultos em modo embed)
+- **Modo embed** (`?embed=1`): player sem nav/footer, `sticky top-0`, sem botão Salvar, sem sugestões, sem botão Foco; layout `layouts/embed.blade.php` com `@livewireScripts` explícito (necessário para Alpine.js sem componente Livewire na página)
+- **Modal global de cifra** (`layouts/app.blade.php`): qualquer link `/cifras/` no site é interceptado por um listener JS global; a cifra abre em iframe fullscreen com `?embed=1`; `z-index:200` garante sobreposição ao header; `overflow-hidden` no `<html>` evita dupla barra de rolagem; Ctrl/Cmd+clique abre normalmente (nova aba)
 - **Artista** (`resources/views/artist/show.blade.php`): bandeira do país via `fi fi-{iso2}`, bio multilíngue com expand/collapse Alpine.js (botão oculto quando texto não é cortado), gênero via `genre_title()`
 - **Fotos de artistas**: salvas em `storage/app/public/artists/{slug}.{ext}` · acessíveis via `Storage::disk('public')->url($artist->photo_path)` · symlink `public/storage` já criado
 - Controllers web usam eager loading `with(['artist', 'category'])` em todas as listagens
 - **CSS global**: `a, button { cursor: pointer }` via `@layer base` em `resources/css/app.css`
-- **meta CSRF**: `<meta name="csrf-token">` no layout (usado pelo fetch do toggle de setlist)
+- **meta CSRF**: `<meta name="csrf-token">` no layout (usado pelo fetch do toggle de caderno)
 
 ---
 
@@ -356,6 +365,9 @@ DatabaseSeeder
 | Bio EN/ES/FR não gerada pelo Enriquecer | MusicBrainz usa relação `wikidata` (não `wikipedia`) — `biosFromWikidata()` trata este caso |
 | Código MFA não chega por email | Verificar `MAIL_MAILER` no `.env`; em dev usar `log` e ler em `storage/logs/laravel.log` |
 | Usuário público consegue acessar `/admin` | `canAccessPanel()` no `User` model restringe por email — não remover |
+| Alpine.js não funciona no embed (`?embed=1`) | `layouts/embed.blade.php` tem `@livewireScripts` explícito — Livewire só injeta Alpine em páginas com componente `@livewire()` |
+| Modal de cifra aparece atrás do header | Modal usa `style="z-index:200"` inline — não substituir por classe Tailwind (pode não compilar corretamente) |
+| Dupla barra de rolagem no modal | `overflow-hidden` é aplicado ao `<html>` ao abrir e removido ao fechar — os três caminhos de fechar (X, Esc, `open=false`) devem todos remover a classe |
 
 ---
 
@@ -375,8 +387,10 @@ DatabaseSeeder
 - Interface Web pública: player com transposição, auto-scroll, YouTube, diagramas
 - Home com grid responsivo (Novidades → Mais tocadas → Categorias)
 - **Explorar cifras** (`/explorar`): filtro por acordes conhecidos (chord picker)
-- **Caderno de Setlists** (`/caderno`): criar, renomear, excluir setlists; adicionar/remover músicas
-- **Auth pública**: cadastro, login com MFA por email, dispositivo confiável por 30 dias
+- **Cadernos** (`/caderno`): criar, renomear, excluir cadernos; adicionar/remover músicas; lista com tom, categoria e dificuldade por linha
+- **Auth pública**: cadastro, login com MFA por email (código fixo `123456` em dev), dispositivo confiável por 30 dias
+- **Modal global de cifra**: todas as cifras do site abrem em iframe fullscreen ao clicar; Ctrl+clique abre em nova aba normalmente
+- **Modo embed** (`?embed=1`): layout mínimo sem nav/footer para o iframe do modal
 - Bandeira do país na página do artista (via `flag-icons`)
 - Indexes de performance no banco
 - SSL configurado no código para funcionar independente do ambiente Windows

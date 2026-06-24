@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends(request()->boolean('embed') ? 'layouts.embed' : 'layouts.app')
 
 @section('title', $song->title . ' — ' . $song->artist->name)
 @section('description', __('ui.song.meta_description', ['title' => $song->title, 'artist' => $song->artist->name]))
@@ -46,6 +46,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-sm">
                     {{-- Salvar na Setlist --}}
+                    @unless(request()->boolean('embed'))
                     @auth
                     @php $userSetlists = auth()->user()->setlists()->orderBy('name')->get(); @endphp
                     <div x-data="{ open: false }" class="relative">
@@ -90,6 +91,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                         {{ __('ui.setlist.save_btn') }}
                     </a>
                     @endauth
+                    @endunless
 
                     @if($song->category)
                     <span class="rounded-lg px-2.5 py-1 text-xs font-semibold"
@@ -128,7 +130,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
     </div>
 
     {{-- ── Barra de controles (sticky) ─────────────────────────────────── --}}
-    <div class="sticky top-16 z-40 bg-[#0D0D0D]/95 backdrop-blur border-b border-white/5 px-4 py-2">
+    <div class="sticky {{ request()->boolean('embed') ? 'top-0' : 'top-16' }} z-40 bg-[#0D0D0D]/95 backdrop-blur border-b border-white/5 px-4 py-2">
         <div class="max-w-3xl mx-auto flex items-center flex-wrap gap-x-5 gap-y-2">
 
             {{-- Transposição --}}
@@ -166,24 +168,35 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 <span class="text-xs text-muted w-4 text-right" x-text="scrollSpeed"></span>
             </div>
 
-            {{-- Vídeo YouTube --}}
-            @if($youtubeId ?? null)
-            <button @click="videoOpen ? closeVideo() : openVideo()"
-                    :class="videoOpen ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
-                    class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                    title="{{ __('ui.song.video_title') }}">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg>
-                {{ __('ui.song.video') }}
-            </button>
-            @endif
+            {{-- Vídeo + Foco (agrupados à direita) --}}
+            <div class="ml-auto flex items-center gap-2">
+                @if($youtubeId ?? null)
+                <button @click="videoOpen ? closeVideo() : openVideo()"
+                        :class="videoOpen ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
+                        class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                        title="{{ __('ui.song.video_title') }}">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg>
+                    {{ __('ui.song.video') }}
+                </button>
+                @endif
 
-            {{-- Modo foco --}}
-            <button @click="toggleFocus()"
-                    :class="focusMode ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
-                    class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors ml-auto">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h7v2H5v5H3V3zm11 0h7v7h-2V5h-5V3zM3 14h2v5h5v2H3v-7zm16 5h-5v2h7v-7h-2v5z"/></svg>
-                {{ __('ui.song.focus') }}
-            </button>
+                @unless(request()->boolean('embed'))
+                <a href="{{ route('songs.pdf', $song) }}" target="_blank" rel="noopener"
+                   class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-surface text-muted hover:bg-white/10 transition-colors"
+                   title="{{ __('ui.song.pdf_title') }}">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                    </svg>
+                    {{ __('ui.song.pdf') }}
+                </a>
+                <button @click="toggleFocus()"
+                        :class="focusMode ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
+                        class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h7v2H5v5H3V3zm11 0h7v7h-2V5h-5V3zM3 14h2v5h5v2H3v-7zm16 5h-5v2h7v-7h-2v5z"/></svg>
+                    {{ __('ui.song.focus') }}
+                </button>
+                @endunless
+            </div>
         </div>
     </div>
 
@@ -224,7 +237,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
 
     {{-- ── Player YouTube flutuante ─────────────────────────────────────── --}}
     {{-- ── Sugestões ────────────────────────────────────────────────────── --}}
-    @if($suggestions->isNotEmpty())
+    @if($suggestions->isNotEmpty() && !request()->boolean('embed'))
     <div class="border-t border-white/5 bg-surface/50 py-10 px-4">
         <div class="max-w-3xl mx-auto">
             <h2 class="text-base font-black mb-4 text-muted uppercase tracking-wider text-xs">{{ __('ui.song.you_might_like') }}</h2>
@@ -626,6 +639,10 @@ function toggleSetlist(setlistId, btn) {
     })
     .then(r => r.json())
     .then(data => {
+        if (data.error === 'limit') {
+            alert('{{ __("ui.setlist.limit_reached") }}');
+            return;
+        }
         const svg = btn.querySelector('svg');
         if (svg) svg.style.color = data.added ? '#FF6D00' : '';
     });

@@ -65,6 +65,9 @@ class SetlistController extends Controller
             $setlist->songs()->detach($songId);
             $added = false;
         } else {
+            if ($setlist->songs()->count() >= 30) {
+                return response()->json(['added' => false, 'error' => 'limit'], 422);
+            }
             $position = $setlist->songs()->count();
             $setlist->songs()->attach($songId, ['position' => $position]);
             $added = true;
