@@ -11,30 +11,39 @@ body {
     color: #1a1a1a;
     background: white;
     line-height: 1.3;
+    margin: 1.8cm 2.2cm;
 }
 
-/* ── Header ──────────────────────────────────────────── */
-.song-header {
-    border-bottom: 2pt solid #FF6D00;
-    padding-bottom: 8pt;
-    margin-bottom: 14pt;
+/* ── Header ─────────────────────────────────────────── */
+.song-header-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 0;
 }
-.song-title  { font-size: 17pt; font-weight: bold; margin-bottom: 3pt; }
-.song-artist { font-size: 11pt; color: #444; margin-bottom: 4pt; }
-.song-meta   { font-size: 8pt; color: #888; }
-.song-meta span { margin-right: 12pt; }
-.song-meta .key-badge {
-    display: inline-block;
-    background: #fff2eb;
-    color: #e65c00;
-    border: 1pt solid #FF6D00;
-    border-radius: 3pt;
-    padding: 1pt 5pt;
+.song-header-main { vertical-align: top; padding: 0; }
+.song-title  { font-size: 17pt; font-weight: bold; line-height: 1.1; margin-bottom: 3pt; }
+.song-artist { font-size: 10.5pt; color: #444; margin-bottom: 5pt; }
+.song-meta   { font-size: 8pt; color: #999; line-height: 1.4; }
+.song-header-key {
+    width: 52pt;
+    vertical-align: middle;
+    text-align: center;
+    border: 2pt solid #FF6D00;
+    font-size: 15pt;
     font-weight: bold;
-    font-size: 8pt;
+    color: #e65c00;
+    padding: 4pt 0;
+    line-height: 1;
+}
+.header-rule {
+    height: 2pt;
+    background-color: #FF6D00;
+    margin: 6pt 0 14pt 0;
+    font-size: 0;
+    line-height: 0;
 }
 
-/* ── ChordPro content ────────────────────────────────── */
+/* ── ChordPro content ───────────────────────────────── */
 .cp-content { margin-bottom: 16pt; }
 
 .cp-line {
@@ -44,14 +53,12 @@ body {
     overflow: hidden;
     line-height: 1;
 }
-
 .cp-pair {
     display: inline-block;
     vertical-align: bottom;
     margin-right: 1pt;
     min-width: 6pt;
 }
-
 .cp-chord {
     display: block;
     font-size: 8.5pt;
@@ -60,14 +67,12 @@ body {
     min-height: 11pt;
     line-height: 1;
 }
-
 .cp-lyric {
     display: block;
     font-size: 10pt;
     line-height: 1.25;
     white-space: pre;
 }
-
 .cp-spacer { height: 7pt; display: block; }
 
 .cp-section {
@@ -94,107 +99,90 @@ body {
 .cp-section-tab    .cp-section-label { color: #777; }
 
 .cp-tab {
-    font-family: "Courier New", "Courier", monospace;
+    font-family: "Courier New", Courier, monospace;
     font-size: 7.5pt;
     line-height: 1.4;
     white-space: pre;
 }
+.cp-comment { font-style: italic; color: #777; font-size: 9pt; margin: 3pt 0; }
 
-.cp-comment {
-    font-style: italic;
-    color: #777;
-    font-size: 9pt;
-    margin: 3pt 0;
-}
-
-.cp-annotation {
-    display: block;
-    font-size: 9pt;
-    margin-bottom: 2pt;
-}
+.cp-annotation { display: block; font-size: 9pt; margin-bottom: 2pt; }
 .cp-annotation-label  { font-weight: bold; color: #555; margin-right: 4pt; }
 .cp-annotation .cp-chord { display: inline; font-size: 9pt; font-weight: bold; color: #e65c00; margin: 0 2pt; }
 .cp-annotation-suffix { color: #777; margin-left: 2pt; }
 
-/* ── Chord diagrams ───────────────────────────────────── */
+/* ── Chord diagrams ─────────────────────────────────── */
 .diagrams-section {
-    border-top: 1pt solid #ddd;
+    border-top: 1pt solid #e8e8e8;
     padding-top: 10pt;
     margin-top: 10pt;
+    page-break-inside: avoid;
 }
 .diagrams-title {
-    font-size: 7.5pt;
+    font-size: 7pt;
     font-weight: bold;
-    color: #999;
+    color: #aaa;
     text-transform: uppercase;
     letter-spacing: 0.5pt;
-    margin-bottom: 6pt;
-}
-.diagrams-row { display: block; }
-.diagram-item {
-    display: inline-block;
-    vertical-align: top;
-    margin-right: 6pt;
-    margin-bottom: 4pt;
-    text-align: center;
+    margin-bottom: 7pt;
 }
 
-/* ── Watermark footer ─────────────────────────────────── */
+/* ── Footer ─────────────────────────────────────────── */
 .pdf-watermark {
-    margin-top: 14pt;
-    padding-top: 6pt;
+    margin-top: 16pt;
+    padding-top: 5pt;
     border-top: 0.5pt solid #eee;
     text-align: center;
-    font-size: 7pt;
+    font-size: 6.5pt;
     color: #ccc;
 }
 </style>
 </head>
 <body>
 
-<div class="song-header">
-    <div class="song-title">{{ $song->title }}</div>
-    <div class="song-artist">{{ $song->artist->name }}</div>
-    <div class="song-meta">
+{{-- ── Header ────────────────────────────────────────────── --}}
+<table class="song-header-table">
+    <tr>
+        <td class="song-header-main">
+            <div class="song-title">{{ $song->title }}</div>
+            <div class="song-artist">{{ $song->artist->name }}</div>
+            <div class="song-meta">
+                @php
+                    $meta = [];
+                    if ($song->album)      $meta[] = $song->album;
+                    if ($song->year)       $meta[] = (string) $song->year;
+                    if ($song->bpm)        $meta[] = $song->bpm . ' BPM';
+                    if ($song->difficulty) {
+                        $diffs = ['iniciante'=>'Iniciante','intermediário'=>'Intermediário','avançado'=>'Avançado'];
+                        $meta[] = $diffs[$song->difficulty] ?? ucfirst($song->difficulty);
+                    }
+                @endphp
+                {{ implode(' · ', $meta) }}
+            </div>
+        </td>
         @if($song->key)
-        <span class="key-badge">{{ $song->key }}</span>
+        <td class="song-header-key">{{ $song->key }}</td>
         @endif
-        @if($song->album)
-        <span>{{ $song->album }}</span>
-        @endif
-        @if($song->year)
-        <span>{{ $song->year }}</span>
-        @endif
-        @if($song->difficulty)
-        @php $diffs = ['iniciante'=>'Iniciante','intermediário'=>'Intermediário','avançado'=>'Avançado']; @endphp
-        <span>{{ $diffs[$song->difficulty] ?? ucfirst($song->difficulty) }}</span>
-        @endif
-        @if($song->bpm)
-        <span>{{ $song->bpm }} BPM</span>
-        @endif
-    </div>
-</div>
+    </tr>
+</table>
+<div class="header-rule"></div>
 
+{{-- ── Conteúdo ChordPro ──────────────────────────────────── --}}
 <div class="cp-content">
     {!! $html !!}
 </div>
 
+{{-- ── Diagramas de acordes ──────────────────────────────── --}}
 @if(!empty($diagrams))
 <div class="diagrams-section">
     <div class="diagrams-title">Diagramas de acordes</div>
-    <div class="diagrams-row">
-        @foreach($diagrams as $name => $svg)
-        <div class="diagram-item">
-            {!! $svg !!}
-        </div>
-        @endforeach
-    </div>
+    @foreach($diagrams as $svg)
+    {!! $svg !!}
+    @endforeach
 </div>
 @endif
 
-<div class="pdf-watermark">
-    querosene.test &mdash; Dê um gás na sua música
-</div>
+<div class="pdf-watermark">querosene.test &mdash; Dê um gás na sua música</div>
 
 </body>
 </html>

@@ -41,6 +41,7 @@ return [
         'video_title'      => 'Assistir vídeo',
         'pdf'              => 'PDF',
         'pdf_title'        => 'Exportar como PDF',
+        'pdf_auth_required' => 'Autentique-se ou crie sua conta grátis para acessar essa função.',
         'focus'            => 'Foco',
         'not_available'    => 'Cifra não disponível.',
         'you_might_like'   => 'Você também pode gostar',

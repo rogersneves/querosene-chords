@@ -55,11 +55,7 @@ class PdfController extends Controller
         $diagrams = [];
         foreach ($chordList as $name) {
             if (isset($dict[$name])) {
-                $diagrams[$name] = ChordDiagramSvg::render(
-                    $name,
-                    $dict[$name]['pattern'],
-                    $dict[$name]['barre']
-                );
+                $diagrams[$name] = ChordDiagramSvg::render($name, $dict[$name]['pattern'], $dict[$name]['barre']);
             }
         }
         return $diagrams;

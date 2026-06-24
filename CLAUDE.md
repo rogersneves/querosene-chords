@@ -259,12 +259,40 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 
 ## Renderizador ChordPro (`app/Services/ChordProRenderer.php`)
 
-- Converte conteúdo ChordPro em HTML para a view pública
+- Converte conteúdo ChordPro em HTML para a view pública e para o PDF
 - Suporta seções (`{start_of_verse}`, `{start_of_chorus}`, `{start_of_tab}`, etc.)
 - Tablaturas (`E|---`) renderizadas em `<pre class="cp-tab">` com borda âmbar
 - Linhas de anotação (`Intro: [Am] [G]`) renderizadas inline
 - `[Chord]` em colchetes só é tratado como acorde se passar por `isChordToken()` — letras entre colchetes que não sejam acordes válidos são renderizadas como letra
-- Transposição e diagramas de acordes via JavaScript (Alpine.js) na view pública
+- Transposição e diagramas de acordes via JavaScript (Alpine.js) na view pública; nos PDFs os diagramas são gerados server-side por `ChordDiagramSvg`
+
+## Exportação PDF (`app/Services/ChordDiagramSvg.php` + `app/Http/Controllers/Web/PdfController.php`)
+
+### Rotas PDF
+
+| Rota | Auth | Descrição |
+|---|---|---|
+| `GET /cifras/{song:slug}/pdf` | pública | PDF da cifra individual |
+| `GET /caderno/{setlist}/pdf` | auth + dono | PDF do caderno completo |
+
+### ChordDiagramSvg
+
+- Renderiza diagramas de acordes como SVG inline (sem JavaScript)
+- Entrada: nome do acorde, padrão de 6 chars do `ChordDictionary` (ex.: `x32010`), número da cejilha
+- Saída: `<svg>` 60×69 px com grid de casa, marcadores x/o, cejilha (barra grossa), pontos de dedo
+- Posições altas (casas > 4): grid desloca e exibe número da casa à esquerda
+
+### PdfController
+
+- `song(Song $song)`: usa `defaultChord` (ou primeiro acorde disponível); se não houver acorde → 404
+- `setlist(Setlist $setlist)`: protegido por `abort_unless(user_id)` + `auth` middleware; eager-load `songs.artist`, `songs.category`, `songs.chords`; usa `chords->firstWhere('is_default', true)` para evitar lazy load no loop
+- Ambos usam `Pdf::loadView()->setPaper('a4', 'portrait')` e devolvem download com nome `{artista}-{titulo}.pdf` / `{caderno}.pdf`
+
+### Templates PDF
+
+- `resources/views/pdf/song.blade.php`: header (título, artista, tom/álbum/ano/dificuldade), conteúdo ChordPro via `{!! $html !!}`, seção de diagramas SVG no rodapé, watermark
+- `resources/views/pdf/setlist.blade.php`: capa com índice (título, artista, tom por linha) + uma página A4 por música com `page-break-after: always`; mesma estrutura de conteúdo do template de cifra
+- CSS dos templates: Arial/Helvetica, fundo branco, acordes em laranja `#e65c00`, seções com borda laranja; usa `display: inline-block` para pares acorde+letra (compatível com DomPDF v2+); sem flexbox/grid (suporte limitado em DomPDF)
 
 ---
 
@@ -368,6 +396,9 @@ DatabaseSeeder
 | Alpine.js não funciona no embed (`?embed=1`) | `layouts/embed.blade.php` tem `@livewireScripts` explícito — Livewire só injeta Alpine em páginas com componente `@livewire()` |
 | Modal de cifra aparece atrás do header | Modal usa `style="z-index:200"` inline — não substituir por classe Tailwind (pode não compilar corretamente) |
 | Dupla barra de rolagem no modal | `overflow-hidden` é aplicado ao `<html>` ao abrir e removido ao fechar — os três caminhos de fechar (X, Esc, `open=false`) devem todos remover a classe |
+| Botão PDF abre no modal | O link usa `target="_blank"`, que já impede a interceptação do listener JS (só intercepta sem `target="_blank"`) |
+| DomPDF não renderiza flexbox/grid | Usar `display: inline-block` e `float` nos templates PDF — DomPDF v2+ suporta inline-block |
+| SVG de diagrama não aparece no PDF | DomPDF suporta SVG inline na v2+; não usar SVG externo via `<img src="...">` |
 
 ---
 
@@ -387,10 +418,11 @@ DatabaseSeeder
 - Interface Web pública: player com transposição, auto-scroll, YouTube, diagramas
 - Home com grid responsivo (Novidades → Mais tocadas → Categorias)
 - **Explorar cifras** (`/explorar`): filtro por acordes conhecidos (chord picker)
-- **Cadernos** (`/caderno`): criar, renomear, excluir cadernos; adicionar/remover músicas; lista com tom, categoria e dificuldade por linha
+- **Cadernos** (`/caderno`): criar, renomear, excluir cadernos; adicionar/remover músicas (limite 30 por caderno); lista com tom, categoria e dificuldade por linha
 - **Auth pública**: cadastro, login com MFA por email (código fixo `123456` em dev), dispositivo confiável por 30 dias
 - **Modal global de cifra**: todas as cifras do site abrem em iframe fullscreen ao clicar; Ctrl+clique abre em nova aba normalmente
 - **Modo embed** (`?embed=1`): layout mínimo sem nav/footer para o iframe do modal
+- **Exportação PDF**: cifra individual (`GET /cifras/{slug}/pdf`, pública) e caderno completo (`GET /caderno/{id}/pdf`, requer auth); diagramas de acordes SVG gerados server-side por `ChordDiagramSvg`; capa com índice no PDF de caderno
 - Bandeira do país na página do artista (via `flag-icons`)
 - Indexes de performance no banco
 - SSL configurado no código para funcionar independente do ambiente Windows

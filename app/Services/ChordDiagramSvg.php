@@ -3,26 +3,20 @@
 namespace App\Services;
 
 /**
- * Renders a guitar chord diagram as an inline SVG element.
- * Designed for server-side use in PDF exports — no JavaScript required.
+ * Renders a guitar chord diagram for DomPDF.
  *
- * Pattern format (ChordDictionary): 6 chars, low-E to high-e.
- *   x = muted | 0 = open | 1-9 = fret number
+ * Each diagram is wrapped in display:inline-block so multiple diagrams
+ * flow side by side in the PDF. Dots use background-color (not Unicode
+ * characters) because DomPDF's embedded fonts lack U+25CF.
+ *
+ * Pattern: 6 chars, low-E to high-e. x=muted, 0=open, 1–9=fret.
  */
 class ChordDiagramSvg
 {
-    private const SX    = 10;   // x of first string (low-E)
-    private const SG    = 10;   // horizontal string gap
-    private const NUT_Y = 27;   // y of nut (top grid line)
-    private const FG    = 12;   // vertical fret gap
-    private const IND_Y = 18;   // y center for x/o indicators
-    private const DOT_R = 4;    // finger dot radius
-
     public static function render(string $name, string $pattern, ?int $barre): string
     {
         $chars = str_split($pattern);
 
-        // Fret numbers used (excluding 0=open)
         $usedFrets = [];
         foreach ($chars as $c) {
             if (is_numeric($c) && (int)$c > 0) {
@@ -34,111 +28,75 @@ class ChordDiagramSvg
         $startFret = ($maxFret <= 4) ? 1 : min($usedFrets);
         $isOpen    = ($startFret === 1);
 
-        $gridLeft  = self::SX;
-        $gridRight = self::SX + 5 * self::SG;
-        $nutY      = self::NUT_Y;
-        $botY      = $nutY + 4 * self::FG;
+        $W  = '11pt';
+        $FH = '11pt';
+        $lB  = 'border-left:0.8pt solid #bbb;';
+        $lrB = 'border-left:0.8pt solid #bbb;border-right:0.8pt solid #bbb;';
 
-        $svg  = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 80" width="60" height="69">';
-        $svg .= '<rect width="70" height="80" fill="white"/>';
+        // inline-block wrapper: makes diagrams flow horizontally; avoid splits across pages
+        $t = '<div style="display:inline-block;vertical-align:top;margin-right:7pt;page-break-inside:avoid;">';
+        $t .= '<table style="border-collapse:collapse;width:66pt;">';
 
-        // Chord name
-        $svg .= sprintf(
-            '<text x="35" y="11" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" font-weight="bold" fill="#1a1a1a">%s</text>',
-            htmlspecialchars($name, ENT_QUOTES, 'UTF-8')
-        );
+        // ── Chord name ─────────────────────────────────────────
+        $t .= '<tr><td colspan="6" style="font-family:Arial,sans-serif;font-size:8pt;font-weight:bold;'
+            . 'color:#e65c00;text-align:center;padding:0 0 3pt 0;line-height:1.3;">'
+            . htmlspecialchars($name, ENT_QUOTES, 'UTF-8')
+            . '</td></tr>';
 
-        // x/o indicators above nut
-        foreach ($chars as $i => $c) {
-            $sx = self::SX + $i * self::SG;
-            if ($c === 'x') {
-                $svg .= sprintf(
-                    '<text x="%d" y="%d" text-anchor="middle" font-family="Arial,sans-serif" font-size="8" fill="#666">×</text>',
-                    $sx, self::IND_Y + 3
-                );
-            } elseif ($c === '0') {
-                $svg .= sprintf(
-                    '<circle cx="%d" cy="%d" r="2.5" fill="none" stroke="#666" stroke-width="1.2"/>',
-                    $sx, self::IND_Y
-                );
-            }
+        // ── x / o indicators ───────────────────────────────────
+        $t .= '<tr>';
+        foreach ($chars as $c) {
+            $label = ($c === 'x') ? 'x' : (($c === '0') ? 'o' : '');
+            $t .= '<td style="font-family:Arial,sans-serif;width:' . $W . ';height:8pt;'
+                . 'text-align:center;vertical-align:bottom;font-size:6.5pt;color:#777;padding:0;line-height:1;">'
+                . $label . '</td>';
         }
+        $t .= '</tr>';
 
-        // Nut line
+        // ── Nut ────────────────────────────────────────────────
         if ($isOpen) {
-            // Thick nut
-            $svg .= sprintf(
-                '<rect x="%d" y="%d" width="%d" height="3" fill="#1a1a1a"/>',
-                $gridLeft, $nutY, $gridRight - $gridLeft
-            );
+            $t .= '<tr><td colspan="6" style="height:3pt;background-color:#1a1a1a;padding:0;font-size:0;line-height:0;"></td></tr>';
         } else {
-            // Thin top line + fret position label
-            $svg .= sprintf(
-                '<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#bbb" stroke-width="0.8"/>',
-                $gridLeft, $nutY, $gridRight, $nutY
-            );
-            $svg .= sprintf(
-                '<text x="%d" y="%d" text-anchor="end" font-family="Arial,sans-serif" font-size="7" fill="#666">%d</text>',
-                $gridLeft - 2, $nutY + 5, $startFret
-            );
+            $t .= '<tr>';
+            foreach ($chars as $i => $c) {
+                $borders = ($i === 5 ? $lrB : $lB) . 'border-top:0.6pt solid #bbb;';
+                $t .= '<td style="' . $borders . 'width:' . $W . ';height:2pt;padding:0;font-size:0;"></td>';
+            }
+            $t .= '</tr>';
         }
 
-        // Fret lines (4 rows)
+        // ── Fret rows ──────────────────────────────────────────
         for ($f = 1; $f <= 4; $f++) {
-            $fy = $nutY + $f * self::FG;
-            $svg .= sprintf(
-                '<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#bbb" stroke-width="0.8"/>',
-                $gridLeft, $fy, $gridRight, $fy
-            );
-        }
+            $cur        = $startFret + $f - 1;
+            $isBarreRow = ($barre !== null && $cur === $barre);
 
-        // String lines (vertical)
-        $strTop = $isOpen ? $nutY + 3 : $nutY;
-        for ($i = 0; $i < 6; $i++) {
-            $sx = self::SX + $i * self::SG;
-            $svg .= sprintf(
-                '<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#aaa" stroke-width="0.8"/>',
-                $sx, $strTop, $sx, $botY
-            );
-        }
+            $t .= '<tr>';
+            foreach ($chars as $i => $c) {
+                $borders = ($i === 5 ? $lrB : $lB) . 'border-bottom:0.5pt solid #ddd;';
+                $fretNum = is_numeric($c) ? (int)$c : 0;
+                $hasDot  = ($fretNum === $cur);
+                $fill    = $hasDot || ($isBarreRow && $c !== 'x' && $c !== '0');
 
-        // Barre bar
-        if ($barre !== null) {
-            $relFret = $barre - $startFret + 1;
-            if ($relFret >= 1 && $relFret <= 4) {
-                $barreY = $nutY + $relFret * self::FG - self::FG / 2;
-
-                $nonMuted = array_keys(array_filter($chars, fn($c) => $c !== 'x'));
-                if (!empty($nonMuted)) {
-                    $bl = self::SX + min($nonMuted) * self::SG;
-                    $br = self::SX + max($nonMuted) * self::SG;
-                    $svg .= sprintf(
-                        '<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="#1a1a1a" stroke-width="8" stroke-linecap="round"/>',
-                        $bl, $barreY, $br, $barreY
-                    );
+                // Use background-color for the dot — &#9679; (●) is not in DomPDF font encoding
+                if ($fill) {
+                    $t .= '<td style="' . $borders . 'width:' . $W . ';height:' . $FH . ';'
+                        . 'background-color:#1a1a1a;padding:0;">&nbsp;</td>';
+                } else {
+                    $t .= '<td style="' . $borders . 'width:' . $W . ';height:' . $FH . ';padding:0;"></td>';
                 }
             }
+            $t .= '</tr>';
         }
 
-        // Finger dots
-        foreach ($chars as $i => $c) {
-            if (!is_numeric($c) || (int)$c === 0) {
-                continue;
-            }
-            $fret    = (int)$c;
-            $relFret = $fret - $startFret + 1;
-            if ($relFret < 1 || $relFret > 4) {
-                continue;
-            }
-            $dotX = self::SX + $i * self::SG;
-            $dotY = $nutY + $relFret * self::FG - self::FG / 2;
-            $svg .= sprintf(
-                '<circle cx="%d" cy="%.1f" r="%d" fill="#1a1a1a"/>',
-                $dotX, $dotY, self::DOT_R
-            );
+        // ── Fret position label (non-open) ─────────────────────
+        if (!$isOpen) {
+            $t .= '<tr><td colspan="6" style="font-family:Arial,sans-serif;font-size:6pt;'
+                . 'color:#888;text-align:left;padding:1pt 0 0 1pt;line-height:1;">'
+                . $startFret . 'a</td></tr>';
         }
 
-        $svg .= '</svg>';
-        return $svg;
+        $t .= '</table>';
+        $t .= '</div>';
+        return $t;
     }
 }

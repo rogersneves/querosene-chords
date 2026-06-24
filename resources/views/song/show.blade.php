@@ -168,8 +168,56 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 <span class="text-xs text-muted w-4 text-right" x-text="scrollSpeed"></span>
             </div>
 
-            {{-- Vídeo + Foco (agrupados à direita) --}}
+            {{-- PDF + Vídeo + Foco (agrupados à direita) --}}
             <div class="ml-auto flex items-center gap-2">
+
+                {{-- PDF: visível em todos os modos (embed inclusive); autenticação exigida para guests --}}
+                @auth
+                <a href="{{ route('songs.pdf', $song) }}" target="_blank" rel="noopener"
+                   class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-surface text-muted hover:bg-white/10 transition-colors"
+                   title="{{ __('ui.song.pdf_title') }}">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                    </svg>
+                    {{ __('ui.song.pdf') }}
+                </a>
+                @else
+                <div x-data="{ pdfMsg: false }" class="relative">
+                    <button @click="pdfMsg = !pdfMsg"
+                            :class="pdfMsg ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
+                            class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                            title="{{ __('ui.song.pdf_title') }}">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                        </svg>
+                        {{ __('ui.song.pdf') }}
+                    </button>
+                    <div x-show="pdfMsg"
+                         @click.outside="pdfMsg = false"
+                         @keydown.escape.window="pdfMsg = false"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         style="display:none"
+                         class="absolute right-0 top-full mt-2 w-64 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 p-4">
+                        <p class="text-xs text-[#F5F5F5] leading-relaxed mb-3">{{ __('ui.song.pdf_auth_required') }}</p>
+                        <div class="flex gap-2">
+                            <a href="{{ route('login') }}" target="_top"
+                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/80 transition-colors">
+                                Entrar
+                            </a>
+                            <a href="{{ route('register') }}" target="_top"
+                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-white/10 text-[#F5F5F5] font-medium hover:bg-white/15 transition-colors">
+                                Criar conta
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                @endauth
+
                 @if($youtubeId ?? null)
                 <button @click="videoOpen ? closeVideo() : openVideo()"
                         :class="videoOpen ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
@@ -181,14 +229,6 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 @endif
 
                 @unless(request()->boolean('embed'))
-                <a href="{{ route('songs.pdf', $song) }}" target="_blank" rel="noopener"
-                   class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-surface text-muted hover:bg-white/10 transition-colors"
-                   title="{{ __('ui.song.pdf_title') }}">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-                    </svg>
-                    {{ __('ui.song.pdf') }}
-                </a>
                 <button @click="toggleFocus()"
                         :class="focusMode ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
                         class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors">
