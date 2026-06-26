@@ -374,11 +374,60 @@ Registrados via `composer.json > autoload > files`.
 - **Botão PDF auth-aware**: usuários autenticados recebem `<a target="_blank">` direto para o PDF; guests recebem botão com popover Alpine.js mostrando mensagem e links **Entrar** / **Criar conta** com `target="_top"` (navega o frame pai quando dentro do modal iframe)
 - **Modo embed** (`?embed=1`): player sem nav/footer, `sticky top-0`, sem botão Salvar, sem sugestões, sem botão Foco; botão PDF visível (com gate de auth); layout `layouts/embed.blade.php` com `@livewireScripts` explícito (necessário para Alpine.js sem componente Livewire na página)
 - **Modal global de cifra** (`layouts/app.blade.php`): qualquer link `/cifras/` no site é interceptado por um listener JS global; a cifra abre em iframe fullscreen com `?embed=1`; `z-index:200` garante sobreposição ao header; `overflow-hidden` no `<html>` evita dupla barra de rolagem; Ctrl/Cmd+clique abre normalmente (nova aba)
+- **Calculadora de Capo** (`/calculadora-de-capo`, `resources/views/tools/capo.blade.php`): dois selects (tonalidade desejada + tonalidade que o músico sabe), botão inverter, card de resultado com badge fret + título/desc dinâmicos, tabela com mapa de acordes diatônicos (forma no braço → como soa com o capo), seção de dicas; totalmente i18n em PT/EN/ES/FR; link no nav (ícone de capo) e no footer
 - **Artista** (`resources/views/artist/show.blade.php`): bandeira do país via `fi fi-{iso2}`, bio multilíngue com expand/collapse Alpine.js (botão oculto quando texto não é cortado), gênero via `genre_title()`
 - **Fotos de artistas**: salvas em `storage/app/public/artists/{slug}.{ext}` · acessíveis via `Storage::disk('public')->url($artist->photo_path)` · symlink `public/storage` já criado
 - Controllers web usam eager loading `with(['artist', 'category'])` em todas as listagens
 - **CSS global**: `a, button { cursor: pointer }` via `@layer base` em `resources/css/app.css`
 - **meta CSRF**: `<meta name="csrf-token">` no layout (usado pelo fetch do toggle de caderno)
+
+---
+
+## Internacionalização (i18n)
+
+Arquivos em `lang/{pt,en,es,fr}/ui.php`. O locale é detectado automaticamente pelo browser/Accept-Language ou pela rota de idioma.
+
+### Padrão de uso
+
+- **Strings estáticas**: `{{ __('ui.section.key') }}` diretamente no Blade
+- **Strings dinâmicas para Alpine.js**: montar array PHP em bloco `@php`, serializar no `<script>` com `{!! json_encode($data, JSON_HEX_TAG | JSON_UNESCAPED_UNICODE) !!}` e ler dentro da função Alpine — **não passar via atributo `x-data`**
+
+```blade
+@php
+    $i18n = [
+        'chave' => __('ui.secao.chave'),
+        'lista' => __('ui.secao.lista'),   {{-- arrays PHP viram arrays JS --}}
+    ];
+@endphp
+<div x-data="minhaFunc()" ...>...</div>
+
+@push('scripts')
+<script>
+function minhaFunc() {
+    const i18n = {!! json_encode($i18n, JSON_HEX_TAG | JSON_UNESCAPED_UNICODE) !!};
+    // usar i18n.chave, i18n.lista etc.
+}
+</script>
+@endpush
+```
+
+### Substituição de placeholders em strings dinâmicas
+
+Strings com placeholders (`:source`, `:fret`, `:fretLabel`) são substituídas em JS com `split/join` para suportar múltiplas ocorrências:
+
+```js
+function tpl(str, vars) {
+    return Object.entries(vars).reduce((s, [k, v]) => s.split(':' + k).join(String(v)), str);
+}
+// Atenção: passar fretLabel ANTES de fret no objeto vars — fretLabel contém :fret como substring
+tpl(str, { fretLabel: '5ª', fret: 5, source: 'G', target: 'C' })
+```
+
+### Calculadora de Capo — detalhes de i18n
+
+- `keys`: array de 12 labels por idioma (ex: PT `'C (Dó)'`, EN `'C'`, ES `'C (Do)'`)
+- `fret_ordinals`: array de 12 ordinais `['', '1ª', '2ª', ...]` — índice 0 nunca usado (fret 0 = sem capo)
+- `badge_suffix`: só o substantivo da unidade (`CASA` / `FRET` / `TRASTE` / `CASE`) — o marcador ordinal (ª, th, º, e/re) é extraído de `fret_ordinals[fret]` removendo os dígitos: `(i18n.fret_ordinals[fret] ?? '').replace(/^\d+/, '')`
 
 ---
 
@@ -421,6 +470,8 @@ DatabaseSeeder
 | Diagramas de acorde cortados entre páginas no PDF | `page-break-inside:avoid` na `.diagrams-section` e em cada wrapper `<div>` de diagrama |
 | Pontos de acorde aparecem como `?` no PDF | U+25CF não está no encoding DomPDF — usar `background-color:#1a1a1a` no `<td>` em vez de `&#9679;` |
 | SVG de diagrama não aparece no PDF | ChordDiagramSvg usa HTML tables (não SVG) — não tentar refatorar para SVG |
+| `@json()` quebra Alpine.js em `x-data` | `@json` usa `JSON_HEX_QUOT` por padrão → `"` vira `"`, que é JavaScript inválido fora de string literal; usar `{!! json_encode($data, JSON_HEX_TAG \| JSON_UNESCAPED_UNICODE) !!}` dentro do `<script>` e ler via variável na função Alpine |
+| `@json([...])` multilinha em atributo HTML causa erro de parse Blade | Hoistear para bloco `@php $var = [...]; @endphp` e usar `@json($var)` — ou melhor, usar o padrão de script acima |
 
 ---
 
@@ -446,6 +497,7 @@ DatabaseSeeder
 - **Modo embed** (`?embed=1`): layout mínimo sem nav/footer para o iframe do modal
 - **Exportação PDF**: cifra individual (`GET /cifras/{slug}/pdf`, pública) e caderno completo (`GET /caderno/{id}/pdf`, requer auth); diagramas de acordes gerados server-side por `ChordDiagramSvg` (HTML tables, não SVG); capa com índice de 2 colunas no PDF de caderno; margens via `body { margin }` (não `@page`)
 - **Botão PDF no modal**: visível em todos os modos (embed inclusive); autenticados → download direto; guests → popover com links para login/cadastro (`target="_top"` para navegar o frame pai)
+- **Calculadora de Capo** (`/calculadora-de-capo`): selects de tonalidade, mapa de acordes diatônicos, dicas de uso; i18n PT/EN/ES/FR; link no nav e footer
 - Bandeira do país na página do artista (via `flag-icons`)
 - Indexes de performance no banco
 - SSL configurado no código para funcionar independente do ambiente Windows

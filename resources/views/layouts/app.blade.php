@@ -201,7 +201,7 @@
                 <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.about') }}</a>
                 <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.contact') }}</a>
                 <a href="#" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.privacy') }}</a>
-                <a href="{{ route('tools.capo') }}" class="hover:text-[#F5F5F5] transition-colors">Calculadora de Capo</a>
+                <a href="{{ route('tools.capo') }}" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.capo.title') }}</a>
                 <a href="{{ route('sitemap') }}" class="hover:text-[#F5F5F5] transition-colors">{{ __('ui.footer.sitemap') }}</a>
             </nav>
         </div>

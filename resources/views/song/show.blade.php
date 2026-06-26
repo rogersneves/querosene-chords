@@ -15,6 +15,9 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
 @endphp
 
 @section('content')
+@auth
+@php $userSetlists = auth()->user()->setlists()->orderBy('name')->get(); @endphp
+@endauth
 <div
     x-data="songPlayer({
         originalKey: '{{ addslashes($song->key ?? '') }}',
@@ -48,7 +51,6 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                     {{-- Salvar na Setlist --}}
                     @unless(request()->boolean('embed'))
                     @auth
-                    @php $userSetlists = auth()->user()->setlists()->orderBy('name')->get(); @endphp
                     <div x-data="{ open: false }" class="relative">
                         <button @click="open = !open" @keydown.escape="open = false"
                                 class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold
@@ -168,8 +170,84 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 <span class="text-xs text-muted w-4 text-right" x-text="scrollSpeed"></span>
             </div>
 
-            {{-- PDF + Vídeo + Foco (agrupados à direita) --}}
+            {{-- PDF + Caderno + Vídeo + Foco (agrupados à direita) --}}
             <div class="ml-auto flex items-center gap-2">
+
+                {{-- Caderno: dropdown de setlists para auth; popover de login para guests --}}
+                @auth
+                <div x-data="{ cadOpen: false }" class="relative">
+                    <button @click="cadOpen = !cadOpen"
+                            :class="cadOpen ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
+                            class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                        </svg>
+                        {{ __('ui.setlist.caderno_btn') }}
+                    </button>
+                    <div x-show="cadOpen"
+                         @click.outside="cadOpen = false"
+                         @keydown.escape.window="cadOpen = false"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         style="display:none"
+                         class="absolute right-0 top-full mt-2 w-52 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                        @forelse($userSetlists as $setlist)
+                        <button @click="toggleSetlist({{ $setlist->id }}, $el); cadOpen = false"
+                                data-setlist="{{ $setlist->id }}"
+                                data-song="{{ $song->id }}"
+                                class="w-full text-left px-4 py-2.5 text-sm hover:bg-white/5 transition-colors flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                            </svg>
+                            {{ $setlist->name }}
+                        </button>
+                        @empty
+                        <a href="{{ route('setlists.index') }}" @click="cadOpen = false"
+                           class="block px-4 py-2.5 text-sm text-muted hover:bg-white/5 transition-colors">
+                            {{ __('ui.setlist.create_first') }}
+                        </a>
+                        @endforelse
+                    </div>
+                </div>
+                @else
+                <div x-data="{ cadMsg: false }" class="relative">
+                    <button @click="cadMsg = !cadMsg"
+                            :class="cadMsg ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
+                            class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
+                        </svg>
+                        {{ __('ui.setlist.caderno_btn') }}
+                    </button>
+                    <div x-show="cadMsg"
+                         @click.outside="cadMsg = false"
+                         @keydown.escape.window="cadMsg = false"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         style="display:none"
+                         class="absolute right-0 top-full mt-2 w-64 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 p-4">
+                        <p class="text-xs text-[#F5F5F5] leading-relaxed mb-3">{{ __('ui.setlist.caderno_auth_required') }}</p>
+                        <div class="flex gap-2">
+                            <a href="{{ route('login') }}" target="_top"
+                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/80 transition-colors">
+                                {{ __('ui.auth.login_btn') }}
+                            </a>
+                            <a href="{{ route('register') }}" target="_top"
+                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-white/10 text-[#F5F5F5] font-medium hover:bg-white/15 transition-colors">
+                                {{ __('ui.auth.register_btn') }}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                @endauth
 
                 {{-- PDF: visível em todos os modos (embed inclusive); autenticação exigida para guests --}}
                 @auth
