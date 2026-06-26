@@ -232,16 +232,16 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                          x-transition:leave="transition ease-in duration-75"
                          x-transition:leave-start="opacity-100 scale-100"
                          x-transition:leave-end="opacity-0 scale-95"
-                         style="display:none"
-                         class="absolute right-0 top-full mt-2 w-64 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 p-4">
+                         style="display:none; width:270px"
+                         class="absolute right-0 top-full mt-2 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 p-4">
                         <p class="text-xs text-[#F5F5F5] leading-relaxed mb-3">{{ __('ui.setlist.caderno_auth_required') }}</p>
                         <div class="flex gap-2">
                             <a href="{{ route('login') }}" target="_top"
-                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/80 transition-colors">
+                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/80 transition-colors whitespace-nowrap">
                                 {{ __('ui.auth.login_btn') }}
                             </a>
                             <a href="{{ route('register') }}" target="_top"
-                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-white/10 text-[#F5F5F5] font-medium hover:bg-white/15 transition-colors">
+                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-white/10 text-[#F5F5F5] font-medium hover:bg-white/15 transition-colors whitespace-nowrap">
                                 {{ __('ui.auth.register_btn') }}
                             </a>
                         </div>
@@ -279,17 +279,17 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                          x-transition:leave="transition ease-in duration-75"
                          x-transition:leave-start="opacity-100 scale-100"
                          x-transition:leave-end="opacity-0 scale-95"
-                         style="display:none"
-                         class="absolute right-0 top-full mt-2 w-64 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 p-4">
+                         style="display:none; width:270px"
+                         class="absolute right-0 top-full mt-2 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 p-4">
                         <p class="text-xs text-[#F5F5F5] leading-relaxed mb-3">{{ __('ui.song.pdf_auth_required') }}</p>
                         <div class="flex gap-2">
                             <a href="{{ route('login') }}" target="_top"
-                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/80 transition-colors">
-                                Entrar
+                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/80 transition-colors whitespace-nowrap">
+                                {{ __('ui.auth.login_btn') }}
                             </a>
                             <a href="{{ route('register') }}" target="_top"
-                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-white/10 text-[#F5F5F5] font-medium hover:bg-white/15 transition-colors">
-                                Criar conta
+                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-white/10 text-[#F5F5F5] font-medium hover:bg-white/15 transition-colors whitespace-nowrap">
+                                {{ __('ui.auth.register_btn') }}
                             </a>
                         </div>
                     </div>
