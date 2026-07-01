@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\ArtistController;
 use App\Http\Controllers\Api\CategoryController;
+use App\Http\Controllers\Api\DrumPatternController;
 use App\Http\Controllers\Api\FeaturedController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SongController;
@@ -15,6 +16,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/songs/{slug}', [SongController::class, 'show']);
     Route::get('/songs/{slug}/suggestions', [SongController::class, 'suggestions']);
     Route::get('/songs/{slug}/chord-diagrams', [SongController::class, 'chordDiagrams']);
+    Route::get('/songs/{song}/drum-pattern', [DrumPatternController::class, 'show']);
 
     Route::get('/artists', [ArtistController::class, 'index']);
     Route::get('/artists/{slug}', [ArtistController::class, 'show']);

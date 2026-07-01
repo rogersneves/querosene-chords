@@ -2,11 +2,10 @@
 @section('title', $setlist->name . ' — ' . __('ui.setlist.my_title'))
 
 @section('content')
-<div x-data="{
-    openSong(url, title) {
-        window.dispatchEvent(new CustomEvent('open-song-modal', { detail: { url, title } }));
-    }
-}">
+<div x-data="setlistManager({
+    reorderUrl: '{{ route('setlists.reorder', $setlist) }}',
+    csrfToken:  '{{ csrf_token() }}'
+})">
 
 <div class="max-w-3xl mx-auto px-4 py-8">
 
@@ -68,11 +67,55 @@
         $diffKeys   = ['iniciante'=>'beginner','intermediário'=>'intermediate','avançado'=>'advanced'];
     @endphp
     @forelse($setlist->songs as $song)
-    <div class="bg-surface rounded-xl border border-white/5 px-4 py-3 mb-2 flex items-center gap-3">
+    @php
+        $p = $song->pivot;
+
+        // Transpõe o tom pelo número de semitons salvo no caderno
+        $displayKey = $song->key;
+        if ($displayKey && $p->semitones != 0) {
+            $cr = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+            $fm = ['Db'=>'C#','Eb'=>'D#','Fb'=>'E','Gb'=>'F#','Ab'=>'G#','Bb'=>'A#','Cb'=>'B'];
+            if (preg_match('/^([A-G][#b]?)(.*)$/', $displayKey, $km)) {
+                $root = $fm[$km[1]] ?? $km[1];
+                $idx  = array_search($root, $cr);
+                if ($idx !== false) {
+                    $displayKey = $cr[(($idx + $p->semitones) % 12 + 12) % 12] . $km[2];
+                }
+            }
+        }
+
+        $settingsQuery = http_build_query(array_filter([
+            'semitones'    => $p->semitones    != 0     ? $p->semitones    : null,
+            'font_size'    => $p->font_size    != 1     ? $p->font_size    : null,
+            'scroll_speed' => $p->scroll_speed != 3     ? $p->scroll_speed : null,
+            'beginner_mode' => $p->beginner_mode        ? 1                : null,
+        ], fn($v) => $v !== null));
+        $songUrl = route('songs.show', $song) . ($settingsQuery ? '?' . $settingsQuery : '');
+    @endphp
+    <div class="bg-surface rounded-xl border border-white/5 px-4 py-3 mb-2 flex items-center gap-3 select-none"
+         draggable="true"
+         data-song-id="{{ $song->id }}"
+         @dragstart="dragStart($event)"
+         @dragenter.prevent="dragEnter($event)"
+         @dragover.prevent
+         @drop.prevent
+         @dragend="dragEnd($event)">
+
+        {{-- Handle --}}
+        <div class="shrink-0 text-white/20 hover:text-white/50 transition-colors touch-none"
+             style="cursor:grab"
+             onmousedown="this.style.cursor='grabbing'"
+             onmouseup="this.style.cursor='grab'"
+             title="{{ __('ui.setlist.drag_handle') }}">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 5a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm6 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zM9 12a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm6 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3zM9 19a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm6 0a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/>
+            </svg>
+        </div>
+
         {{-- Título + artista --}}
         <div class="min-w-0 flex-1">
             <button
-                @click="openSong('{{ route('songs.show', $song) }}', '{{ addslashes($song->title) }}')"
+                @click="openSong('{{ $songUrl }}', '{{ addslashes($song->title) }}')"
                 class="font-semibold text-sm hover:text-primary transition-colors truncate block text-left w-full">
                 {{ $song->title }}
             </button>
@@ -80,8 +123,8 @@
         </div>
         {{-- Tom --}}
         <div class="hidden sm:block w-10 shrink-0">
-            @if($song->key)
-            <span class="text-xs font-mono text-primary">{{ $song->key }}</span>
+            @if($displayKey)
+            <span class="text-xs font-mono text-primary">{{ $displayKey }}</span>
             @endif
         </div>
         {{-- Badges --}}
@@ -123,4 +166,66 @@
 </div>
 
 </div>
+
+@push('scripts')
+<script>
+function setlistManager({ reorderUrl, csrfToken }) {
+    return {
+        dragSrc: null,
+
+        openSong(url, title) {
+            window.dispatchEvent(new CustomEvent('open-song-modal', { detail: { url, title } }));
+        },
+
+        dragStart(e) {
+            this.dragSrc = e.currentTarget;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', '');
+            setTimeout(() => { if (this.dragSrc) this.dragSrc.style.opacity = '0.4'; }, 0);
+        },
+
+        // dragEnter fires once on entry (not continuously like dragOver),
+        // so moving elements here is stable without oscillation.
+        dragEnter(e) {
+            const target = e.currentTarget;
+            if (!this.dragSrc || target === this.dragSrc) return;
+
+            const list = target.parentElement;
+            const items = [...list.children];
+            const srcIdx = items.indexOf(this.dragSrc);
+            const tgtIdx = items.indexOf(target);
+            if (srcIdx === -1 || tgtIdx === -1) return;
+
+            list.insertBefore(
+                this.dragSrc,
+                srcIdx > tgtIdx ? target : target.nextSibling
+            );
+        },
+
+        // Save final order when drag ends (fires whether dropped or cancelled).
+        dragEnd(e) {
+            if (this.dragSrc) {
+                this.dragSrc.style.opacity = '';
+                this.saveOrder(this.dragSrc.parentElement);
+            }
+            this.dragSrc = null;
+        },
+
+        saveOrder(list) {
+            const ids = [...list.querySelectorAll('[data-song-id]')]
+                .map(el => parseInt(el.dataset.songId));
+            fetch(reorderUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ ids }),
+            });
+        },
+    };
+}
+</script>
+@endpush
 @endsection

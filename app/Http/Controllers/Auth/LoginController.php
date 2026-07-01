@@ -12,8 +12,9 @@ use Illuminate\View\View;
 
 class LoginController extends Controller
 {
-    public function create(): View
+    public function create(Request $request): View
     {
+        $this->storeIntendedRedirect($request);
         return view('auth.login');
     }
 
@@ -48,6 +49,14 @@ class LoginController extends Controller
         MfaController::sendCode($user);
 
         return redirect()->route('mfa.verify');
+    }
+
+    private function storeIntendedRedirect(Request $request): void
+    {
+        $url = $request->query('redirect');
+        if ($url && parse_url($url, PHP_URL_HOST) === parse_url(config('app.url'), PHP_URL_HOST)) {
+            redirect()->setIntendedUrl($url);
+        }
     }
 
     public function destroy(Request $request): RedirectResponse

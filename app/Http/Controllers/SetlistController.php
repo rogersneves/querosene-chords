@@ -59,21 +59,53 @@ class SetlistController extends Controller
     {
         abort_unless($setlist->user_id === auth()->id(), 403);
 
-        $songId = $request->validate(['song_id' => ['required', 'exists:songs,id']])['song_id'];
+        $validated = $request->validate([
+            'song_id'      => ['required', 'exists:songs,id'],
+            'semitones'    => ['integer', 'between:-6,6'],
+            'font_size'    => ['integer', 'between:0,3'],
+            'scroll_speed' => ['integer', 'between:0,10'],
+            'beginner_mode' => ['boolean'],
+        ]);
+
+        $songId = $validated['song_id'];
+
+        $settings = [
+            'semitones'    => $validated['semitones'] ?? 0,
+            'font_size'    => $validated['font_size'] ?? 1,
+            'scroll_speed' => $validated['scroll_speed'] ?? 3,
+            'beginner_mode' => $validated['beginner_mode'] ?? false,
+        ];
 
         if ($setlist->songs()->where('song_id', $songId)->exists()) {
-            $setlist->songs()->detach($songId);
-            $added = false;
-        } else {
-            if ($setlist->songs()->count() >= 30) {
-                return response()->json(['added' => false, 'error' => 'limit'], 422);
-            }
-            $position = $setlist->songs()->count();
-            $setlist->songs()->attach($songId, ['position' => $position]);
-            $added = true;
+            $setlist->songs()->updateExistingPivot($songId, $settings);
+            return response()->json(['updated' => true]);
         }
 
-        return response()->json(['added' => $added]);
+        if ($setlist->songs()->count() >= 30) {
+            return response()->json(['added' => false, 'error' => 'limit'], 422);
+        }
+
+        $setlist->songs()->attach($songId, array_merge($settings, [
+            'position' => $setlist->songs()->count(),
+        ]));
+
+        return response()->json(['added' => true]);
+    }
+
+    public function reorder(Request $request, Setlist $setlist): JsonResponse
+    {
+        abort_unless($setlist->user_id === auth()->id(), 403);
+
+        $ids = $request->validate([
+            'ids'   => ['required', 'array'],
+            'ids.*' => ['integer', 'exists:songs,id'],
+        ])['ids'];
+
+        foreach ($ids as $position => $songId) {
+            $setlist->songs()->updateExistingPivot($songId, ['position' => $position]);
+        }
+
+        return response()->json(['ok' => true]);
     }
 
     public function removeSong(Setlist $setlist, Song $song): RedirectResponse

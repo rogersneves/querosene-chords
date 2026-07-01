@@ -86,7 +86,9 @@ imports      id, original_filename, format, status(pending|processing|completed|
              [index: created_at, status]
 setlists     id, user_id→users, name, is_public(bool), timestamps
              [index: user_id]
-setlist_songs id, setlist_id→setlists, song_id→songs, position(smallint), timestamps
+setlist_songs id, setlist_id→setlists, song_id→songs, position(smallint),
+             semitones(tinyint default 0), font_size(tinyint unsigned default 1),
+             scroll_speed(tinyint unsigned default 3), beginner_mode(bool default false), timestamps
              [unique: setlist_id+song_id] [index: setlist_id+position]
 mfa_codes    id, user_id→users, code(hash), expires_at, timestamps
              [index: user_id]
@@ -136,7 +138,8 @@ Requer autenticação. Todas as rotas prefixadas com `/caderno` e agrupadas com 
 | `GET /caderno/{setlist}` | Detalhe do caderno |
 | `DELETE /caderno/{setlist}` | Exclui caderno |
 | `PATCH /caderno/{setlist}/renomear` | Renomeia caderno |
-| `POST /caderno/{setlist}/toggle` | Adiciona/remove música (JSON, sem reload) |
+| `POST /caderno/{setlist}/toggle` | Adiciona música ou atualiza configurações se já existir (JSON, sem reload) |
+| `POST /caderno/{setlist}/reordenar` | Reordena músicas (JSON `ids[]`, salva `position`) |
 | `DELETE /caderno/{setlist}/musica/{song}` | Remove música |
 | `GET /caderno/{setlist}/pdf` | Exporta caderno completo como PDF |
 
@@ -144,7 +147,13 @@ Na página de cada cifra: botão **Salvar** (ícone marcador) → dropdown com c
 
 **Limite de músicas**: máximo 30 por caderno. O `toggle` retorna `{added: false, error: 'limit'}` com HTTP 422 quando o limite é atingido; o JS do player exibe `alert()` com a mensagem traduzida (`ui.setlist.limit_reached`).
 
-**Detalhe do caderno** (`setlists/show.blade.php`): lista de músicas em colunas de largura fixa — título+artista (`flex-1`), tom (`w-10`), badges categoria+dificuldade (`w-52`), botão remover. Clicar em uma música abre o modal global de cifra (não navega para outra página). Botão **Exportar PDF** aparece no header quando o caderno tem ao menos uma música.
+**Toggle upsert**: ao clicar em **Salvar** em uma música que já está no caderno, o toggle atualiza as configurações do player (semitones, font_size, scroll_speed, beginner_mode) em vez de remover a música. Retorna `{updated: true}` neste caso. A remoção só acontece via botão **×** na lista do caderno (`DELETE /caderno/{setlist}/musica/{song}`).
+
+**Configurações do player salvas no caderno**: `SetlistController::toggle()` lê `semitones`, `font_size`, `scroll_speed`, `beginner_mode` do corpo da requisição e os salva em `setlist_songs`. Ao abrir a música a partir do caderno, `setlists/show.blade.php` monta a URL com os parâmetros não-padrão como query string (`?semitones=X&font_size=Y...`); o `songPlayer.init()` lê esses parâmetros e aplica as configurações via `$nextTick`.
+
+**Detalhe do caderno** (`setlists/show.blade.php`): lista de músicas em colunas de largura fixa — handle de drag (`w-4`), título+artista (`flex-1`), tom transposto (`w-10`), badges categoria+dificuldade (`w-52`), botão remover. O tom exibido é o tom transposto conforme `pivot->semitones` (calculado em PHP no `@forelse`). Clicar em uma música abre o modal global de cifra (não navega para outra página). Botão **Exportar PDF** aparece no header quando o caderno tem ao menos uma música.
+
+**Drag-and-drop de reordenação**: cada linha tem `draggable="true"` + eventos Alpine `@dragstart`, `@dragenter.prevent`, `@dragover.prevent`, `@dragend`. A lógica usa `@dragenter` (dispara uma vez por entrada, estável) para mover o elemento no DOM; `@dragover.prevent` evita o cursor proibido mas não reordena. A nova ordem é salva em `dragEnd` via `POST /caderno/{setlist}/reordenar` com `ids[]`. Handle de drag usa `style="cursor:grab"` inline (Tailwind JIT pode não compilar `cursor-grab`).
 
 ---
 
@@ -257,6 +266,13 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 
 ---
 
+## BeginnerModeService (`app/Services/BeginnerModeService.php`)
+
+- `analyze(array $chordList): ?array` — encontra o melhor capo (1–7) que minimiza barre chords; retorna `null` se a música já não tiver barres ou se nenhum capo ajudar
+- `transposeContent(string $content, int $semitones): string` — transpõe todos os tokens `[Acorde]` dentro de um conteúdo ChordPro via `preg_replace_callback`; retorna o conteúdo inalterado se `$semitones === 0`
+- `transposeKey(string $key, int $semitones): string` — transpõe um único nome de tom (ex: `"Am"`, `"C#"`); usado no PDF e na exibição do tom no caderno
+- Transposição interna via array cromático `['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']` com mapa de bemóis (`Db→C#`, etc.)
+
 ## Renderizador ChordPro (`app/Services/ChordProRenderer.php`)
 
 - Converte conteúdo ChordPro em HTML para a view pública e para o PDF
@@ -287,7 +303,7 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 ### PdfController
 
 - `song(Song $song)`: usa `defaultChord` (ou primeiro acorde disponível); se não houver acorde → 404
-- `setlist(Setlist $setlist)`: protegido por `abort_unless(user_id)` + `auth` middleware; eager-load `songs.artist`, `songs.category`, `songs.chords`; usa `chords->firstWhere('is_default', true)` para evitar lazy load no loop
+- `setlist(Setlist $setlist)`: protegido por `abort_unless(user_id)` + `auth` middleware; eager-load `songs.artist`, `songs.category`, `songs.chords`; usa `chords->firstWhere('is_default', true)` para evitar lazy load no loop; para cada música lê `pivot->semitones` e aplica `BeginnerModeService::transposeContent()` no conteúdo ChordPro, `transposeKey()` em cada item de `chord_list` e na `song->key`; o template recebe `$entry['key']` (tom transposto) em vez de `$song->key`
 - Ambos usam `Pdf::loadView()->setPaper('a4', 'portrait')` e devolvem download com nome `{artista}-{titulo}.pdf` / `{caderno}.pdf`
 
 ### Templates PDF
@@ -335,7 +351,7 @@ O arquivo de upload chega como `['uuid' => TemporaryUploadedFile]` no Filament 3
 ### `Setlist`
 - `$fillable`: user_id, name, is_public
 - `user()`: `BelongsTo(User)`
-- `songs()`: `BelongsToMany(Song)` via `setlist_songs`, ordenado por `position`
+- `songs()`: `BelongsToMany(Song)` via `setlist_songs`, ordenado por `position`; `withPivot(['position', 'semitones', 'font_size', 'scroll_speed', 'beginner_mode'])`
 
 ### `User`
 - Implementa `FilamentUser` — `canAccessPanel()` retorna `true` apenas para `admin@querosene.test`
@@ -370,9 +386,12 @@ Registrados via `composer.json > autoload > files`.
 - **Home** (`resources/views/home.blade.php`): ordem das seções — Novidades → Mais tocadas → Categorias; todas as seções usam `grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`
 - **Explorar** (`/explorar`): chord picker com 32 acordes comuns; selecionar acordes e buscar retorna apenas músicas cujo `chord_list` é subconjunto dos acordes selecionados
 - **Song card** (`resources/views/partials/song-card.blade.php`): exibe badge do YouTube (ícone vermelho) quando `youtube_id` está preenchido; tem `data-title="{{ $song->title }}"` para o modal global ler o título
-- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup, botão **Salvar no Caderno**; barra de controles à direita com **PDF** (visível em todos os modos, auth-aware) + **Vídeo** + **Foco** (Foco oculto em embed)
+- **Player** (`resources/views/song/show.blade.php`): transposição, auto-scroll, tamanho de fonte, player YouTube flutuante e arrastável, diagramas de acordes em popup, botão **Salvar no Caderno** (meta bar, fora do embed); barra de controles sticky à direita com **Caderno** + **PDF** (ambos visíveis em todos os modos, auth-aware) + **Vídeo** + **Foco** (Foco oculto em embed)
+- **Botão Caderno (barra de controles)**: visível em todos os modos (inclusive embed); auth → dropdown com lista de cadernos do usuário (chama `toggleSetlist()`); guest → popover com mensagem `ui.setlist.caderno_auth_required` + links **Entrar** / **Criar conta** com `target="_top"` e `?redirect=route('songs.show', $song)` para retornar à cifra após login
+- **Redirect pós-auth via `?redirect=`**: `LoginController::create()` e `RegisterController::create()` lêem `?redirect=` da query string, validam que o host é o mesmo (`parse_url` comparison) e chamam `redirect()->setIntendedUrl($url)`; `redirect()->intended()` nos controllers de login/MFA usa automaticamente a URL salva — fluxo funciona tanto pelo caminho trusted-device quanto pelo MFA
+- **`$userSetlists`**: computado uma vez no topo de `@section('content')` dentro de `@auth`, disponível para todos os dropdowns de setlist na página (meta bar + barra de controles + modo embed)
 - **Botão PDF auth-aware**: usuários autenticados recebem `<a target="_blank">` direto para o PDF; guests recebem botão com popover Alpine.js mostrando mensagem e links **Entrar** / **Criar conta** com `target="_top"` (navega o frame pai quando dentro do modal iframe)
-- **Modo embed** (`?embed=1`): player sem nav/footer, `sticky top-0`, sem botão Salvar, sem sugestões, sem botão Foco; botão PDF visível (com gate de auth); layout `layouts/embed.blade.php` com `@livewireScripts` explícito (necessário para Alpine.js sem componente Livewire na página)
+- **Modo embed** (`?embed=1`): player sem nav/footer, `sticky top-0`, sem botão Salvar (meta bar), sem sugestões, sem botão Foco; botões Caderno e PDF visíveis (com gate de auth); layout `layouts/embed.blade.php` com `@livewireScripts` explícito (necessário para Alpine.js sem componente Livewire na página)
 - **Modal global de cifra** (`layouts/app.blade.php`): qualquer link `/cifras/` no site é interceptado por um listener JS global; a cifra abre em iframe fullscreen com `?embed=1`; `z-index:200` garante sobreposição ao header; `overflow-hidden` no `<html>` evita dupla barra de rolagem; Ctrl/Cmd+clique abre normalmente (nova aba)
 - **Calculadora de Capo** (`/calculadora-de-capo`, `resources/views/tools/capo.blade.php`): dois selects (tonalidade desejada + tonalidade que o músico sabe), botão inverter, card de resultado com badge fret + título/desc dinâmicos, tabela com mapa de acordes diatônicos (forma no braço → como soa com o capo), seção de dicas; totalmente i18n em PT/EN/ES/FR; link no nav (ícone de capo) e no footer
 - **Artista** (`resources/views/artist/show.blade.php`): bandeira do país via `fi fi-{iso2}`, bio multilíngue com expand/collapse Alpine.js (botão oculto quando texto não é cortado), gênero via `genre_title()`
@@ -380,6 +399,9 @@ Registrados via `composer.json > autoload > files`.
 - Controllers web usam eager loading `with(['artist', 'category'])` em todas as listagens
 - **CSS global**: `a, button { cursor: pointer }` via `@layer base` em `resources/css/app.css`
 - **meta CSRF**: `<meta name="csrf-token">` no layout (usado pelo fetch do toggle de caderno)
+- **Toast de notificação**: vanilla JS puro (não Alpine.js) em `layouts/app.blade.php` e `layouts/embed.blade.php`. IIFE registra `window.addEventListener('show-toast', ...)` imediatamente ao parse do HTML, antes de qualquer framework carregar. `app.js` é vazio (só `//`) — Alpine.js vem exclusivamente do Livewire com timing imprevisível, tornando listeners Alpine não confiáveis para este caso. O `toggleSetlist()` dispara `show-toast` para `window` (toast no layout embed) **e** para `window.parent` com try/catch (toast no layout app quando o player está em iframe).
+- **`toggleSetlist(setlistId, btn, settings = {})`**: função JS no player que inclui as configurações atuais (`semitones`, `font_size`, `scroll_speed`, `beginner_mode`) no corpo do fetch; lida com respostas `{added:true}`, `{updated:true}`, `{added:false}` (remoção) e `{error:'limit'}`; exibe toast colorido por tipo (verde = adicionado, azul = atualizado, neutro = removido).
+- **Restauração de configurações via URL params**: `songPlayer.init()` lê `semitones`, `font_size`, `scroll_speed`, `beginner_mode` da query string e aplica as configurações via `$nextTick` após renderização dos acordes no DOM.
 
 ---
 
@@ -472,6 +494,12 @@ DatabaseSeeder
 | SVG de diagrama não aparece no PDF | ChordDiagramSvg usa HTML tables (não SVG) — não tentar refatorar para SVG |
 | `@json()` quebra Alpine.js em `x-data` | `@json` usa `JSON_HEX_QUOT` por padrão → `"` vira `"`, que é JavaScript inválido fora de string literal; usar `{!! json_encode($data, JSON_HEX_TAG \| JSON_UNESCAPED_UNICODE) !!}` dentro do `<script>` e ler via variável na função Alpine |
 | `@json([...])` multilinha em atributo HTML causa erro de parse Blade | Hoistear para bloco `@php $var = [...]; @endphp` e usar `@json($var)` — ou melhor, usar o padrão de script acima |
+| Tailwind JIT não compila classes dentro de `<template x-if>` ou adicionadas dinamicamente | Usar `style="..."` inline para larguras/margens críticas em popovers e badges Alpine — ex: `style="width:270px"` em vez de `w-64` |
+| `redirect()->intended()` não retorna para a URL certa após login via popover guest | O middleware `auth` só salva a intended URL automaticamente em rotas protegidas; para popovers em páginas públicas, passar `?redirect=URL` no link de login e chamar `redirect()->setIntendedUrl()` no `create()` do controller |
+| Alpine.js listener (`@show-toast.window`) não dispara no toast | `app.js` é vazio — Alpine vem do Livewire com timing imprevisível; usar vanilla JS IIFE com `window.addEventListener` registrado no parse do HTML, antes de qualquer framework |
+| `window.dispatchEvent` dentro de iframe não chega ao layout pai | Disparar para `window` (tosta no embed) **e** `window.parent` (toast no app layout) com try/catch: `fire(window); if (window.parent !== window) try { fire(window.parent); } catch(e) {}` |
+| `@dragover` para reordenação DOM causa oscilação | `dragover` dispara ~60fps — mover elementos nele faz o item oscilar nas bordas; usar `@dragenter` (dispara uma vez por entrada no elemento) e salvar a ordem em `dragEnd` (sempre dispara, seja drop ou cancelamento) |
+| Tailwind JIT `cursor-grab` / `cursor-grabbing` não compila | Usar `style="cursor:grab"` + `onmousedown="this.style.cursor='grabbing'"` + `onmouseup="this.style.cursor='grab'"` inline |
 
 ---
 
@@ -497,10 +525,16 @@ DatabaseSeeder
 - **Modo embed** (`?embed=1`): layout mínimo sem nav/footer para o iframe do modal
 - **Exportação PDF**: cifra individual (`GET /cifras/{slug}/pdf`, pública) e caderno completo (`GET /caderno/{id}/pdf`, requer auth); diagramas de acordes gerados server-side por `ChordDiagramSvg` (HTML tables, não SVG); capa com índice de 2 colunas no PDF de caderno; margens via `body { margin }` (não `@page`)
 - **Botão PDF no modal**: visível em todos os modos (embed inclusive); autenticados → download direto; guests → popover com links para login/cadastro (`target="_top"` para navegar o frame pai)
+- **Botão Caderno no player**: dropdown de cadernos para auth; popover de login/cadastro para guests com redirect de volta à cifra após autenticação
 - **Calculadora de Capo** (`/calculadora-de-capo`): selects de tonalidade, mapa de acordes diatônicos, dicas de uso; i18n PT/EN/ES/FR; link no nav e footer
 - Bandeira do país na página do artista (via `flag-icons`)
 - Indexes de performance no banco
 - SSL configurado no código para funcionar independente do ambiente Windows
+- **Configurações do player no caderno**: `setlist_songs` salva `semitones`, `font_size`, `scroll_speed`, `beginner_mode`; toggle upsert atualiza configurações se música já está no caderno; restauração automática ao abrir música a partir do caderno via URL params
+- **Toast de feedback**: notificação vanilla JS ao adicionar/atualizar/remover música do caderno; funciona tanto na página direta quanto no iframe do modal
+- **Reordenação drag-and-drop** no detalhe do caderno; ordem persistida via `POST /caderno/{setlist}/reordenar`
+- **Tom transposto no caderno**: a lista do caderno exibe o tom transposto conforme `pivot->semitones`
+- **PDF com transposição**: o PDF do caderno transpõe acordes, tom e diagramas conforme as configurações salvas por música no caderno
 
 ### ⏳ Pendente
 - App Flutter (repo separado) — estrutura, telas, player, auto-scroll

@@ -4,13 +4,118 @@ namespace App\Services;
 
 class ChordProRenderer
 {
-    public function render(string $content): string
+    /**
+     * Filtra linhas {comment} pelo idioma ativo.
+     *
+     * {comment: [PT] texto} → exibe só se locale = 'pt', remove o prefixo [PT]
+     * {comment: texto sem prefixo} → sempre exibe, sem alteração
+     */
+    public function filterCommentsByLocale(string $content, string $locale): string
     {
-        $lines     = explode("\n", str_replace("\r\n", "\n", $content));
-        $count     = count($lines);
-        $html      = '';
-        $inSection = false;
+        $supported = ['PT', 'EN', 'ES', 'FR'];
+        $active    = strtoupper($locale);
+
+        $filtered = array_map(function (string $line) use ($supported, $active) {
+            if (!preg_match('/^\{comment:\s*\[([A-Z]{2})\]\s*(.*?)\}$/s', $line, $m)) {
+                return $line;
+            }
+
+            $lang = $m[1];
+            $text = trim($m[2]);
+
+            if (in_array($lang, $supported) && $lang !== $active) {
+                return null;
+            }
+
+            return '{comment: ' . $text . '}';
+        }, explode("\n", $content));
+
+        return implode("\n", array_filter($filtered, fn($l) => $l !== null));
+    }
+
+    /**
+     * Retorna a cifra como lista de seções com seus compassos para o chord grid.
+     */
+    public function toGrid(string $content, string $locale = 'pt'): array
+    {
+        $content     = $this->filterCommentsByLocale($content, $locale);
+        $lines       = explode("\n", str_replace("\r\n", "\n", $content));
+        $sections    = [];
+        $current     = null;
+        $barIndex    = 0;
+        $pendingFill = false;
+        $commentIdx  = 0;
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if (preg_match('/^\{start_of_(\w+)(?::\s*(.+?))?\}/', $line, $m)) {
+                if ($current) $sections[] = $current;
+                $current = [
+                    'section_type'  => $m[1],
+                    'section_label' => trim($m[2] ?? ucfirst($m[1])),
+                    'bars'          => [],
+                ];
+                continue;
+            }
+
+            if (preg_match('/^\{end_of_\w+\}/', $line)) {
+                if ($current) { $sections[] = $current; $current = null; }
+                continue;
+            }
+
+            if (preg_match('/^\{drum_fill\}/', $line)) { $pendingFill = true; continue; }
+
+            if (preg_match('/^\{(?:comment|c)(?::\s*(.*))?\}$/i', $line, $cm)) {
+                $text = trim($cm[1] ?? '');
+                if ($text !== '') {
+                    if (!$current) {
+                        $current = ['section_type' => 'verse', 'section_label' => '', 'bars' => []];
+                    }
+                    $current['bars'][] = ['type' => 'comment', 'text' => $text, 'cid' => $commentIdx++];
+                }
+                continue;
+            }
+
+            if (preg_match('/^\{/', $line)) { continue; }
+
+            if ($current && preg_match_all('/\[([^\]]+)\]/', $line, $matches)) {
+                $chords = array_values(array_filter($matches[1], fn($c) => $this->isChordToken($c)));
+                if ($chords) {
+                    $barsCount = 1;
+                    if (preg_match('/\{bars:\s*(\d+)\}/', $line, $bm)) {
+                        $barsCount = max(1, (int) $bm[1]);
+                    }
+                    for ($b = 0; $b < $barsCount; $b++) {
+                        $current['bars'][] = [
+                            'index'      => $barIndex++,
+                            'chords'     => $chords,
+                            'is_fill'    => $pendingFill && $b === $barsCount - 1,
+                            'bars_count' => $barsCount,
+                            'bar_offset' => $b,
+                        ];
+                    }
+                    $pendingFill = false;
+                }
+            }
+        }
+
+        if ($current) $sections[] = $current;
+
+        return $sections;
+    }
+
+    public function render(string $content, ?string $locale = null): string
+    {
+        $locale  = $locale ?? app()->getLocale();
+        $content = $this->filterCommentsByLocale($content, $locale);
+
+        $lines        = explode("\n", str_replace("\r\n", "\n", $content));
+        $count        = count($lines);
+        $html         = '';
+        $inSection    = false;
         $inTabSection = false;
+        $lastWasComment = false;
 
         for ($i = 0; $i < $count; $i++) {
             $line = rtrim($lines[$i]);
@@ -42,8 +147,9 @@ class ChordProRenderer
 
                     $html .= "<div class=\"cp-section cp-section-{$type}\">\n";
                     $html .= '<span class="cp-section-label">' . $this->e($label) . "</span>\n";
-                    $inSection = true;
-                    $inTabSection = ($type === 'tab');
+                    $inSection      = true;
+                    $inTabSection   = ($type === 'tab');
+                    $lastWasComment = false;
                     continue;
                 }
 
@@ -61,8 +167,10 @@ class ChordProRenderer
                     $comment = trim($cm[1] ?? '');
                     if ($comment === '') {
                         $html .= "<div class=\"cp-spacer\"></div>\n";
+                        $lastWasComment = false;
                     } else {
                         $html .= '<div class="cp-comment">' . $this->e($comment) . "</div>\n";
+                        $lastWasComment = true;
                     }
                     continue;
                 }
@@ -73,12 +181,24 @@ class ChordProRenderer
 
             // ── ChordPro comment (#) or suppressed plain-text line ───────────
             if (str_starts_with(ltrim($line), '#') || $this->isSuppressedLine($line)) {
-                continue;
+                continue; // não altera $lastWasComment — linha invisível
             }
 
             // ── Empty line ────────────────────────────────────────────────────
             if (trim($line) === '') {
+                // Suprimir spacer entre linhas de comment consecutivas
+                if ($lastWasComment) {
+                    $nextReal = '';
+                    for ($j = $i + 1; $j < $count; $j++) {
+                        $nxt = trim($lines[$j]);
+                        if ($nxt !== '') { $nextReal = $nxt; break; }
+                    }
+                    if (preg_match('/^\{(?:comment|c):/i', $nextReal)) {
+                        continue;
+                    }
+                }
                 $html .= "<div class=\"cp-spacer\"></div>\n";
+                $lastWasComment = false;
                 continue;
             }
 
@@ -133,6 +253,7 @@ class ChordProRenderer
             }
 
             // ── Regular line (may have inline [Chord] markers) ────────────────
+            $lastWasComment = false;
             $html .= $this->renderLine($line, $inTabSection);
         }
 

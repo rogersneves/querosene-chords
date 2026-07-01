@@ -49,5 +49,6 @@ Route::middleware('auth')->prefix('caderno')->name('setlists.')->group(function 
     Route::patch('/{setlist}/renomear', [SetlistController::class, 'rename'])->name('rename');
     Route::post('/{setlist}/toggle', [SetlistController::class, 'toggle'])->name('toggle');
     Route::delete('/{setlist}/musica/{song}', [SetlistController::class, 'removeSong'])->name('remove-song');
+    Route::post('/{setlist}/reordenar', [SetlistController::class, 'reorder'])->name('reorder');
     Route::get('/{setlist}/pdf', [PdfController::class, 'setlist'])->name('pdf');
 });

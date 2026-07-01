@@ -5,6 +5,41 @@
 
 @push('head')
 <meta property="og:type" content="music.song">
+<style>
+/* chord grid */
+.chord-grid { display:flex; flex-direction:column; gap:2rem; }
+.section-header { font-size:.65rem; font-weight:700; letter-spacing:.12em;
+    text-transform:uppercase; color:#FF6D00; border-bottom:1px solid #FF6D00;
+    padding-bottom:.25rem; margin-bottom:.75rem; }
+.section-bars { display:flex; flex-wrap:wrap; gap:.5rem; }
+.bar-card { display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-width:4rem; padding:.5rem .75rem; border-radius:.5rem;
+    background:#1A1A1A; border:1px solid rgba(255,255,255,.07);
+    cursor:pointer; transition:background .12s,border-color .12s; user-select:none; }
+.bar-card:hover { background:rgba(255,109,0,.08); border-color:rgba(255,109,0,.3); }
+.bar-card.is-active { background:rgba(255,109,0,.18); border-color:#FF6D00; }
+.bar-card--fill { border-style:dashed; }
+.bar-number { font-size:.6rem; color:rgba(255,255,255,.25); margin-bottom:.25rem; }
+.bar-chords { display:flex; flex-wrap:wrap; gap:.2rem .4rem; justify-content:center; }
+.bar-chord { font-size:var(--chord-font-size,1.25rem); font-weight:700;
+    color:#FF6D00; cursor:pointer; }
+.bar-chord:hover { color:#FFB300; }
+.bar-fill-icon { font-size:.7rem; color:rgba(255,179,0,.6); margin-top:.2rem; }
+.bar-card { position:relative; }
+.bar-duration { position:absolute; top:3px; right:5px; font-size:.6rem;
+    color:rgba(255,255,255,.3); font-family:monospace; }
+.bar-card.is-active .bar-duration { color:rgba(255,255,255,.7); }
+.bar-card.is-continuation { opacity:.5; border-style:dashed; }
+.bar-card.is-continuation.is-active { opacity:1; border-style:solid; }
+.bar-comment { width:100%; font-size:.95rem; color:rgba(245,245,245,.65); font-style:italic; padding:.15rem 0; }
+/* transport */
+.btn-transport { width:1.75rem; height:1.75rem; display:flex; align-items:center;
+    justify-content:center; border-radius:.5rem; background:#1A1A1A;
+    transition:background .15s,opacity .15s; }
+.btn-transport:hover:not(:disabled) { background:rgba(255,255,255,.1); }
+.btn-transport:disabled { opacity:.3; cursor:not-allowed; }
+.btn-transport.is-active { background:#FF6D00; color:#fff; }
+</style>
 @endpush
 
 @php
@@ -46,6 +81,9 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                         <span>{{ $song->year }}</span>
                         @endif
                     </p>
+                    @if($composer)
+                    <p class="mt-0.5 text-xs text-white/40">{{ $composer }}</p>
+                    @endif
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-sm">
                     {{-- Salvar na Setlist --}}
@@ -66,7 +104,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                              x-transition:enter-end="opacity-100 scale-100"
                              class="absolute left-0 top-full mt-1 w-52 bg-surface border border-white/10 rounded-xl shadow-xl z-30 overflow-hidden">
                             @forelse($userSetlists as $setlist)
-                            <button @click="toggleSetlist({{ $setlist->id }}, $el); open = false"
+                            <button @click="toggleSetlist({{ $setlist->id }}, $el, { semitones, font_size: fontSize, scroll_speed: scrollSpeed, beginner_mode: beginnerMode ? 1 : 0 }); open = false"
                                     data-setlist="{{ $setlist->id }}"
                                     data-song="{{ $song->id }}"
                                     class="w-full text-left px-4 py-2.5 text-sm hover:bg-white/5 transition-colors flex items-center gap-2">
@@ -137,11 +175,15 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
 
             {{-- Transposição --}}
             <div class="flex items-center gap-2">
-                <span class="text-xs text-muted uppercase tracking-wider">{{ __('ui.song.key_label') }}</span>
+                <div class="flex flex-col items-start leading-none gap-0.5">
+                    <span class="text-xs text-muted uppercase tracking-wider">{{ __('ui.song.key_label') }}</span>
+                    <button x-show="semitones !== 0" @click="resetTranspose()"
+                            style="display:none"
+                            class="text-xs text-primary hover:underline transition-colors">{{ __('ui.song.reset') }}</button>
+                </div>
                 <button @click="transpose(-1)" class="w-7 h-7 flex items-center justify-center rounded-lg bg-surface hover:bg-white/10 text-[#F5F5F5] transition-colors text-base font-bold">−</button>
                 <span class="w-10 text-center font-mono font-bold text-primary text-sm" x-text="displayKey"></span>
                 <button @click="transpose(+1)" class="w-7 h-7 flex items-center justify-center rounded-lg bg-surface hover:bg-white/10 text-[#F5F5F5] transition-colors text-base font-bold">+</button>
-                <button x-show="semitones !== 0" @click="resetTranspose()" class="text-xs text-muted hover:text-primary transition-colors ml-1">{{ __('ui.song.reset') }}</button>
             </div>
 
             {{-- Tamanho da fonte --}}
@@ -152,26 +194,44 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                         class="text-sm font-bold w-7 h-7 flex items-center justify-center rounded-lg bg-surface hover:bg-white/10 text-[#F5F5F5] transition-colors">A+</button>
             </div>
 
-            {{-- Auto-scroll --}}
-            <div class="flex items-center gap-2">
-                <button @click="toggleScroll()"
-                        :class="scrolling ? 'text-primary' : 'text-muted'"
-                        class="w-7 h-7 flex items-center justify-center rounded-lg bg-surface hover:bg-white/10 transition-colors"
-                        :title="scrolling ? '{{ __('ui.song.pause') }}' : '{{ __('ui.song.autoscroll') }}'">
-                    <svg x-show="!scrolling" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    <svg x-show="scrolling" class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            <span class="text-white/20 select-none mx-0.5">|</span>
+
+            {{-- Transporte --}}
+            <div class="flex items-center gap-1.5">
+                <button id="btn-play" onclick="playerPlay()" class="btn-transport text-[#F5F5F5]" title="Play">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                 </button>
-                <input
-                    type="range" min="0" max="10" x-model.number="scrollSpeed"
-                    @change="scrolling && restartScroll()"
-                    class="w-20 accent-primary h-1 cursor-pointer"
-                    title="{{ __('ui.song.scroll_speed') }}"
-                >
-                <span class="text-xs text-muted w-4 text-right" x-text="scrollSpeed"></span>
+                <button id="btn-pause" onclick="playerPause()" class="btn-transport text-[#F5F5F5]" disabled title="{{ __('ui.song.pause') }}">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                </button>
+                <button id="btn-stop" onclick="playerStop()" class="btn-transport text-[#F5F5F5]" disabled title="Stop">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+                </button>
+                <button id="btn-mute" onclick="playerMute()" class="btn-transport text-[#F5F5F5]" disabled title="Mudo">🔊</button>
+                <span id="drum-bpm" class="hidden text-xs font-mono text-amber-400"></span>
             </div>
 
-            {{-- PDF + Caderno + Vídeo + Foco (agrupados à direita) --}}
+            {{-- Barra de progresso --}}
+            <div class="w-full h-0.5 bg-white/5 rounded overflow-hidden -mb-2 mt-0.5" style="flex-basis:100%;order:99">
+                <div id="drum-progress" class="h-full bg-amber-500 transition-all duration-150" style="width:0%"></div>
+            </div>
+
+            {{-- Direita: Iniciante + Caderno + Foco + menu sanduíche (PDF · Vídeo) --}}
             <div class="ml-auto flex items-center gap-2">
+
+                {{-- Versão Iniciante --}}
+                @if($simplified)
+                <button @click="toggleBeginner()"
+                        :class="beginnerMode ? 'text-green-400 bg-green-400/10' : 'text-muted bg-surface'"
+                        class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                        title="{{ __('ui.song.beginner_title') }}">
+                    <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/>
+                    </svg>
+                    <span x-show="!beginnerMode">{{ __('ui.song.beginner_btn') }}</span>
+                    <span x-show="beginnerMode" style="display:none" class="font-mono font-bold">Capo {{ $simplified['capo'] }}</span>
+                </button>
+                @endif
 
                 {{-- Caderno: dropdown de setlists para auth; popover de login para guests --}}
                 @auth
@@ -196,7 +256,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                          style="display:none"
                          class="absolute right-0 top-full mt-2 w-52 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
                         @forelse($userSetlists as $setlist)
-                        <button @click="toggleSetlist({{ $setlist->id }}, $el); cadOpen = false"
+                        <button @click="toggleSetlist({{ $setlist->id }}, $el, { semitones, font_size: fontSize, scroll_speed: scrollSpeed, beginner_mode: beginnerMode ? 1 : 0 }); cadOpen = false"
                                 data-setlist="{{ $setlist->id }}"
                                 data-song="{{ $song->id }}"
                                 class="w-full text-left px-4 py-2.5 text-sm hover:bg-white/5 transition-colors flex items-center gap-2">
@@ -235,12 +295,13 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                          style="display:none; width:270px"
                          class="absolute right-0 top-full mt-2 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 p-4">
                         <p class="text-xs text-[#F5F5F5] leading-relaxed mb-3">{{ __('ui.setlist.caderno_auth_required') }}</p>
+                        @php $songUrl = route('songs.show', $song); @endphp
                         <div class="flex gap-2">
-                            <a href="{{ route('login') }}" target="_top"
+                            <a href="{{ route('login', ['redirect' => $songUrl]) }}" target="_top"
                                class="flex-1 text-center text-xs py-1.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/80 transition-colors whitespace-nowrap">
                                 {{ __('ui.auth.login_btn') }}
                             </a>
-                            <a href="{{ route('register') }}" target="_top"
+                            <a href="{{ route('register', ['redirect' => $songUrl]) }}" target="_top"
                                class="flex-1 text-center text-xs py-1.5 rounded-lg bg-white/10 text-[#F5F5F5] font-medium hover:bg-white/15 transition-colors whitespace-nowrap">
                                 {{ __('ui.auth.register_btn') }}
                             </a>
@@ -249,63 +310,7 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                 </div>
                 @endauth
 
-                {{-- PDF: visível em todos os modos (embed inclusive); autenticação exigida para guests --}}
-                @auth
-                <a href="{{ route('songs.pdf', $song) }}" target="_blank" rel="noopener"
-                   class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-surface text-muted hover:bg-white/10 transition-colors"
-                   title="{{ __('ui.song.pdf_title') }}">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-                    </svg>
-                    {{ __('ui.song.pdf') }}
-                </a>
-                @else
-                <div x-data="{ pdfMsg: false }" class="relative">
-                    <button @click="pdfMsg = !pdfMsg"
-                            :class="pdfMsg ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
-                            class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                            title="{{ __('ui.song.pdf_title') }}">
-                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
-                        </svg>
-                        {{ __('ui.song.pdf') }}
-                    </button>
-                    <div x-show="pdfMsg"
-                         @click.outside="pdfMsg = false"
-                         @keydown.escape.window="pdfMsg = false"
-                         x-transition:enter="transition ease-out duration-100"
-                         x-transition:enter-start="opacity-0 scale-95"
-                         x-transition:enter-end="opacity-100 scale-100"
-                         x-transition:leave="transition ease-in duration-75"
-                         x-transition:leave-start="opacity-100 scale-100"
-                         x-transition:leave-end="opacity-0 scale-95"
-                         style="display:none; width:270px"
-                         class="absolute right-0 top-full mt-2 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 p-4">
-                        <p class="text-xs text-[#F5F5F5] leading-relaxed mb-3">{{ __('ui.song.pdf_auth_required') }}</p>
-                        <div class="flex gap-2">
-                            <a href="{{ route('login') }}" target="_top"
-                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/80 transition-colors whitespace-nowrap">
-                                {{ __('ui.auth.login_btn') }}
-                            </a>
-                            <a href="{{ route('register') }}" target="_top"
-                               class="flex-1 text-center text-xs py-1.5 rounded-lg bg-white/10 text-[#F5F5F5] font-medium hover:bg-white/15 transition-colors whitespace-nowrap">
-                                {{ __('ui.auth.register_btn') }}
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                @endauth
-
-                @if($youtubeId ?? null)
-                <button @click="videoOpen ? closeVideo() : openVideo()"
-                        :class="videoOpen ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
-                        class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                        title="{{ __('ui.song.video_title') }}">
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg>
-                    {{ __('ui.song.video') }}
-                </button>
-                @endif
-
+                {{-- Foco --}}
                 @unless(request()->boolean('embed'))
                 <button @click="toggleFocus()"
                         :class="focusMode ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
@@ -314,17 +319,126 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
                     {{ __('ui.song.focus') }}
                 </button>
                 @endunless
+
+                {{-- Menu sanduíche: PDF + Vídeo --}}
+                <div x-data="{ menuOpen: false }" class="relative">
+                    <button @click="menuOpen = !menuOpen"
+                            :class="menuOpen ? 'text-primary bg-primary/10' : 'text-muted bg-surface'"
+                            class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 transition-colors"
+                            title="Menu">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                            <line x1="3" y1="6" x2="21" y2="6"/>
+                            <line x1="3" y1="12" x2="21" y2="12"/>
+                            <line x1="3" y1="18" x2="21" y2="18"/>
+                        </svg>
+                    </button>
+
+                    <div x-show="menuOpen"
+                         @click.outside="menuOpen = false"
+                         @keydown.escape.window="menuOpen = false"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="opacity-0 scale-95"
+                         x-transition:enter-end="opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="opacity-100 scale-100"
+                         x-transition:leave-end="opacity-0 scale-95"
+                         style="display:none; width:180px"
+                         class="absolute right-0 top-full mt-2 bg-[#1A1A1A] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+
+                        {{-- PDF --}}
+                        @auth
+                        <a href="{{ route('songs.pdf', $song) }}" target="_blank" rel="noopener"
+                           @click="menuOpen = false"
+                           class="flex items-center gap-3 px-4 py-3 text-sm text-[#F5F5F5] hover:bg-white/5 transition-colors">
+                            <svg class="w-4 h-4 text-white/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                            </svg>
+                            {{ __('ui.song.pdf') }}
+                        </a>
+                        @else
+                        <div class="flex items-center gap-3 px-4 py-3 text-sm text-white/30">
+                            <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+                            </svg>
+                            {{ __('ui.song.pdf') }}
+                            <a href="{{ route('login') }}" target="_top" class="ml-auto text-primary hover:underline text-xs">{{ __('ui.auth.login_btn') }}</a>
+                        </div>
+                        @endauth
+
+                        {{-- Vídeo --}}
+                        @if($youtubeId ?? null)
+                        <div class="border-t border-white/5"></div>
+                        <button @click="videoOpen ? closeVideo() : openVideo(); menuOpen = false"
+                                :class="videoOpen ? 'text-primary' : 'text-[#F5F5F5]'"
+                                class="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-white/5 transition-colors">
+                            <svg class="w-4 h-4 text-white/30 shrink-0" viewBox="0 0 24 24" fill="currentColor"><path d="M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z"/></svg>
+                            {{ __('ui.song.video') }}
+                        </button>
+                        @endif
+
+                    </div>
+                </div>
+
             </div>
         </div>
     </div>
 
     {{-- ── Conteúdo da cifra ───────────────────────────────────────────── --}}
     <div class="max-w-3xl mx-auto px-4 py-8">
-        @if($html)
-        <div id="chord-content" :class="fontSizeClasses[fontSize]">
-            <div class="cp-content">
-                {!! $html !!}
+        @if($grid)
+        @php
+            $allComments = collect($grid)
+                ->flatMap(fn($s) => $s['bars'])
+                ->filter(fn($b) => ($b['type'] ?? 'bar') === 'comment')
+                ->values();
+            $lastCid = $allComments->isNotEmpty() ? $allComments->last()['cid'] : -1;
+        @endphp
+        @if($allComments->count() > 1)
+        <div class="mb-6 flex flex-col gap-0.5">
+            @foreach($allComments->slice(0, -1) as $c)
+            <p class="bar-comment">{{ $c['text'] }}</p>
+            @endforeach
+        </div>
+        @endif
+        <div id="chord-grid" class="chord-grid">
+            @foreach($grid as $section)
+            <div class="chord-section">
+                @if($section['section_label'])
+                <div class="section-header">{{ $section['section_label'] }}</div>
+                @endif
+                <div class="section-bars">
+                    @foreach($section['bars'] as $bar)
+                    @if(($bar['type'] ?? 'bar') === 'comment')
+                    @if($bar['cid'] === $lastCid)
+                    <div class="bar-comment">{{ $bar['text'] }}</div>
+                    @endif
+                    @else
+                    @php
+                        $cardClass = 'bar-card';
+                        if ($bar['is_fill'])                $cardClass .= ' bar-card--fill';
+                        if (($bar['bar_offset'] ?? 0) > 0)  $cardClass .= ' is-continuation';
+                    @endphp
+                    <div class="{{ $cardClass }}"
+                         data-bar-index="{{ $bar['index'] }}"
+                         onclick="seekToBar({{ $bar['index'] }})">
+                        <div class="bar-number">{{ $bar['index'] + 1 }}</div>
+                        <div class="bar-chords">
+                            @foreach($bar['chords'] as $chord)
+                            <span class="bar-chord" data-chord="{{ $chord }}">{{ $chord }}</span>
+                            @endforeach
+                        </div>
+                        @if(($bar['bar_offset'] ?? 0) === 0 && ($bar['bars_count'] ?? 1) > 1)
+                        <span class="bar-duration">×{{ $bar['bars_count'] }}</span>
+                        @endif
+                        @if($bar['is_fill'])
+                        <div class="bar-fill-icon">▸ fill</div>
+                        @endif
+                    </div>
+                    @endif
+                    @endforeach
+                </div>
             </div>
+            @endforeach
         </div>
         @else
         <p class="text-muted">{{ __('ui.song.not_available') }}</p>
@@ -520,10 +634,20 @@ $chordDict = collect(ChordDictionary::all())->mapWithKeys(fn($v, $k) => [
 @endif
 
 @push('scripts')
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script>
-const CHROMATIC  = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const FLAT_MAP   = {Db:'C#',Eb:'D#',Fb:'E',Gb:'F#',Ab:'G#',Bb:'A#',Cb:'B'};
-const CHORD_DICT = @json($chordDict);
+const CHROMATIC    = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const FLAT_MAP     = {Db:'C#',Eb:'D#',Fb:'E',Gb:'F#',Ab:'G#',Bb:'A#',Cb:'B'};
+const CHORD_DICT   = @json($chordDict);
+const BEGINNER_DATA = {!! json_encode($simplified, JSON_HEX_TAG | JSON_UNESCAPED_UNICODE) !!};
+@php
+$barsChords = collect($grid)
+    ->flatMap(fn($s) => $s['bars'])
+    ->filter(fn($b) => ($b['type'] ?? 'bar') === 'bar')
+    ->mapWithKeys(fn($b) => [$b['index'] => $b['chords']])
+    ->toArray();
+@endphp
+const BARS_CHORDS = {!! json_encode($barsChords, JSON_HEX_TAG) !!};
 @if($youtubeId ?? null)
 const YOUTUBE_EMBED = 'https://www.youtube.com/embed/{{ $youtubeId }}?rel=0&modestbranding=1&autoplay=1';
 @endif
@@ -554,71 +678,94 @@ function transposeChord(chord, n) {
 }
 
 function songPlayer({ originalKey, songSlug }) {
+    const beginnerData = BEGINNER_DATA;
+    const fontSizes = ['1.0rem', '1.25rem', '1.55rem', '1.9rem'];
     return {
         semitones: 0,
         displayKey: originalKey || '—',
         fontSize: +(localStorage.getItem('qs_fontSize') ?? 1),
-        fontSizeClasses: ['cp-font-sm', 'cp-font-md', 'cp-font-lg', 'cp-font-xl'],
         scrollSpeed: 3,
-        scrolling: false,
         focusMode: false,
-        scrollTimer: null,
         videoOpen: false,
         activeDiagram: null,
         diagramX: 0,
         diagramY: 0,
         diagrams: Object.assign({}, CHORD_DICT),
         originalKey,
+        beginnerMode: false,
 
         init() {
-            this.$watch('fontSize', val => localStorage.setItem('qs_fontSize', val));
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('font_size')) this.fontSize = Math.min(3, Math.max(0, +params.get('font_size')));
+
+            const initBeginner = params.get('beginner_mode') === '1' && !!beginnerData;
+            const initSemitones = params.has('semitones') && !initBeginner
+                ? Math.min(6, Math.max(-6, +params.get('semitones')))
+                : null;
+
+            const setFontVar = val => document.documentElement.style.setProperty(
+                '--chord-font-size', fontSizes[Math.min(3, Math.max(0, val))] ?? fontSizes[1]
+            );
+            setFontVar(this.fontSize);
+            this.$watch('fontSize', val => { localStorage.setItem('qs_fontSize', val); setFontVar(val); });
+
             this.bindClicks();
             if (songSlug) this.fetchDiagrams();
+
+            this.$nextTick(() => {
+                if (initBeginner) {
+                    this.beginnerMode = true;
+                    this.semitones    = beginnerData.semitones;
+                    this.displayKey   = this.originalKey ? transposeChord(this.originalKey, this.semitones) : '—';
+                    document.querySelectorAll('.bar-chord[data-chord]').forEach(el => {
+                        el.textContent = transposeChord(el.dataset.chord, this.semitones);
+                    });
+                } else if (initSemitones !== null && initSemitones !== 0) {
+                    this.semitones  = initSemitones;
+                    this.displayKey = this.originalKey ? transposeChord(this.originalKey, this.semitones) : '—';
+                    document.querySelectorAll('.bar-chord[data-chord]').forEach(el => {
+                        el.textContent = transposeChord(el.dataset.chord, this.semitones);
+                    });
+                }
+            });
         },
 
         transpose(delta) {
             const next = this.semitones + delta;
             if (next < -6 || next > 6) return;
             this.semitones = next;
-            this.displayKey = this.originalKey
-                ? transposeChord(this.originalKey, this.semitones)
-                : '—';
-            document.querySelectorAll('.cp-chord[data-chord]').forEach(el => {
+            this.beginnerMode = false;
+            this.displayKey = this.originalKey ? transposeChord(this.originalKey, this.semitones) : '—';
+            document.querySelectorAll('.bar-chord[data-chord]').forEach(el => {
                 el.textContent = transposeChord(el.dataset.chord, this.semitones);
             });
         },
 
         resetTranspose() {
             this.semitones = 0;
+            this.beginnerMode = false;
             this.displayKey = this.originalKey || '—';
-            document.querySelectorAll('.cp-chord[data-chord]').forEach(el => {
+            document.querySelectorAll('.bar-chord[data-chord]').forEach(el => {
                 el.textContent = el.dataset.chord;
             });
         },
 
-        toggleScroll() {
-            this.scrolling = !this.scrolling;
-            this.scrolling ? this.startScroll() : this.stopScroll();
-        },
-
-        startScroll() {
-            this.stopScroll();
-            if (this.scrollSpeed === 0) { this.scrolling = false; return; }
-            const pxPerTick = this.scrollSpeed * 0.4;
-            let remainder = 0;
-            this.scrollTimer = setInterval(() => {
-                remainder += pxPerTick;
-                const px = Math.floor(remainder);
-                if (px > 0) { window.scrollBy(0, px); remainder -= px; }
-            }, 50);
-        },
-
-        restartScroll() {
-            if (this.scrolling) { this.stopScroll(); this.startScroll(); }
-        },
-
-        stopScroll() {
-            if (this.scrollTimer) { clearInterval(this.scrollTimer); this.scrollTimer = null; }
+        toggleBeginner() {
+            if (!beginnerData) return;
+            this.beginnerMode = !this.beginnerMode;
+            if (this.beginnerMode) {
+                this.semitones = beginnerData.semitones;
+                this.displayKey = this.originalKey ? transposeChord(this.originalKey, this.semitones) : '—';
+                document.querySelectorAll('.bar-chord[data-chord]').forEach(el => {
+                    el.textContent = transposeChord(el.dataset.chord, this.semitones);
+                });
+            } else {
+                this.semitones = 0;
+                this.displayKey = this.originalKey || '—';
+                document.querySelectorAll('.bar-chord[data-chord]').forEach(el => {
+                    el.textContent = el.dataset.chord;
+                });
+            }
         },
 
         toggleFocus() {
@@ -642,16 +789,14 @@ function songPlayer({ originalKey, songSlug }) {
                 const res  = await fetch(`/api/v1/songs/${songSlug}/chord-diagrams`);
                 const data = await res.json();
                 const list = data.data || data;
-                // Diagrams específicos da música sobrescrevem o dicionário
                 list.forEach(d => { this.diagrams[d.name] = d; });
-                // Não re-vincula — listeners já registrados no init()
             } catch (_) {}
         },
 
         bindClicks() {
-            document.querySelectorAll('.cp-chord[data-chord]').forEach(el => {
+            document.querySelectorAll('.bar-chord[data-chord]').forEach(el => {
                 el.addEventListener('click', e => {
-                    // Usa o nome transposto no momento do clique
+                    e.stopPropagation();
                     const transposed = transposeChord(el.dataset.chord, this.semitones);
                     const base = transposed.match(/^([A-G][#b]?)/)?.[1];
                     const diag = this.diagrams[transposed] || this.diagrams[base];
@@ -664,9 +809,7 @@ function songPlayer({ originalKey, songSlug }) {
                     y = Math.max(8, y);
                     this.diagramX = x;
                     this.diagramY = y;
-                    // name reflete o acorde transposto no título do popup
                     this.activeDiagram = { ...diag, name: transposed };
-                    e.stopPropagation();
                 });
             });
         },
@@ -692,6 +835,7 @@ function songPlayer({ originalKey, songSlug }) {
             const maxFret = fretted.length ? Math.max(...fretted) : 0;
             const offset  = maxFret > fretCount ? minFret - 1 : 0; // rows to skip
             const showNut = offset === 0;
+            const showCapo = this.beginnerMode && beginnerData && beginnerData.capo > 0;
 
             let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
 
@@ -704,6 +848,13 @@ function songPlayer({ originalKey, songSlug }) {
             for (let s = 0; s < strings; s++) {
                 const x = startX + s * sw;
                 svg += `<line x1="${x}" y1="${startY}" x2="${x}" y2="${startY+fretCount*fh}" stroke="#444" stroke-width="0.8"/>`;
+            }
+
+            // Capo indicator: green bar in the middle of fret 1 + star + fret number on the right
+            if (showCapo && showNut) {
+                const capoY = startY + fh * 0.5;
+                svg += `<rect x="${startX-6}" y="${capoY-5}" width="${(strings-1)*sw+12}" height="10" rx="5" fill="#22c55e" opacity="0.88"/>`;
+                svg += `<text x="${W-12}" y="${capoY}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#22c55e">★${beginnerData.capo}</text>`;
             }
 
             // Fret position label for barre / high-position chords
@@ -729,7 +880,8 @@ function songPlayer({ originalKey, songSlug }) {
                 } else if (p === 0) {
                     svg += `<circle cx="${x}" cy="${startY-9}" r="4" fill="none" stroke="#888" stroke-width="1.5"/>`;
                 } else {
-                    const rel = p - offset;
+                    const capoShift = (showCapo && showNut) ? 1 : 0;
+                    const rel = p - offset + capoShift;
                     if (rel >= 1 && rel <= fretCount) {
                         const y = startY + (rel - 0.5) * fh;
                         svg += `<circle cx="${x}" cy="${y}" r="7" fill="#FF6D00"/>`;
@@ -743,7 +895,276 @@ function songPlayer({ originalKey, songSlug }) {
     };
 }
 
-function toggleSetlist(setlistId, btn) {
+// ── Transport Player ─────────────────────────────────────────────────────────
+const SONG_SLUG = '{{ $song->slug }}';
+const LOCALE    = '{{ app()->getLocale() }}';
+
+const state = {
+    status:     'stopped',
+    muted:      false,
+    currentBar: 0,
+    currentStep: 0,
+    totalBars:  0,
+    drumLoaded: false,
+    drumData:   null,
+};
+
+const drumKick = new Tone.MembraneSynth({
+    pitchDecay: 0.03, octaves: 8,
+    envelope: { attack: 0.001, decay: 0.18, sustain: 0, release: 0.25, attackCurve: 'exponential' },
+}).toDestination();
+
+const drumHihat = new Tone.MetalSynth({
+    frequency: 400, harmonicity: 5.1, modulationIndex: 32, resonance: 4000, octaves: 1.5,
+    envelope: { attack: 0.001, decay: 0.05, release: 0.01 },
+}).toDestination();
+drumHihat.volume.value = -12;
+
+const chordSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.02, decay: 0.3, sustain: 0.4, release: 1.2 },
+    volume: -14,
+}).toDestination();
+
+const CHORD_NOTES = {
+    // Tríades maiores
+    'C':['C3','E3','G3','C4'],'C#':['C#3','F3','G#3','C#4'],'Db':['C#3','F3','G#3','C#4'],
+    'D':['D3','F#3','A3','D4'],'D#':['D#3','G3','A#3','D#4'],'Eb':['D#3','G3','A#3','D#4'],
+    'E':['E3','G#3','B3','E4'],'F':['F3','A3','C4','F4'],
+    'F#':['F#3','A#3','C#4','F#4'],'Gb':['F#3','A#3','C#4','F#4'],
+    'G':['G3','B3','D4','G4'],'G#':['G#3','C4','D#4','G#4'],'Ab':['G#3','C4','D#4','G#4'],
+    'A':['A3','C#4','E4','A4'],'A#':['A#3','D4','F4','A#4'],'Bb':['A#3','D4','F4','A#4'],
+    'B':['B3','D#4','F#4','B4'],
+    // Menores
+    'Am':['A3','C4','E4','A4'],'Am6':['A3','C4','E4','F#4'],'Am7':['A3','C4','E4','G4'],
+    'Bm':['B3','D4','F#4','B4'],'Bm7':['B3','D4','F#4','A4'],
+    'Cm':['C3','D#3','G3','C4'],'Cm7':['C3','D#3','G3','A#3'],
+    'Dm':['D3','F3','A3','D4'],'Dm7':['D3','F3','A3','C4'],
+    'Em':['E3','G3','B3','E4'],'Em7':['E3','G3','B3','D4'],
+    'F#m':['F#3','A3','C#4','F#4'],'F#m7':['F#3','A3','C#4','E4'],
+    'Gm':['G3','A#3','D4','G4'],'Gm7':['G3','A#3','D4','F4'],
+    'G#m':['G#3','B3','D#4','G#4'],'Abm':['G#3','B3','D#4','G#4'],
+    // Dominantes
+    'A7':['A3','C#4','E4','G4'],'B7':['B3','D#4','F#4','A4'],
+    'C7':['C3','E3','G3','A#3'],'D7':['D3','F#3','A3','C4'],
+    'E7':['E3','G#3','B3','D4'],'F7':['F3','A3','C4','D#4'],
+    'F#7':['F#3','A#3','C#4','E4'],'G7':['G3','B3','D4','F4'],
+    'G#7':['G#3','C4','D#4','F#4'],'Ab7':['G#3','C4','D#4','F#4'],
+    'Bb7':['A#3','D4','F4','G#4'],
+    // Maj7
+    'Cmaj7':['C3','E3','G3','B3'],'Dmaj7':['D3','F#3','A3','C#4'],
+    'Emaj7':['E3','G#3','B3','D#4'],'Fmaj7':['F3','A3','C4','E4'],
+    'Gmaj7':['G3','B3','D4','F#4'],'Amaj7':['A3','C#4','E4','G#4'],
+    'Bbmaj7':['A#3','D4','F4','A4'],
+    // Suspensos
+    'Asus4':['A3','D4','E4','A4'],'Dsus4':['D3','G3','A3','D4'],
+    'Esus4':['E3','A3','B3','E4'],'Gsus4':['G3','C4','D4','G4'],
+    // Outros
+    'Bb6':['A#3','D4','F4','G4'],'Gm6':['G3','A#3','D4','E4'],
+};
+
+function resolveChordNotes(name) {
+    if (CHORD_NOTES[name]) return CHORD_NOTES[name];
+    const suffixes = ['maj7','min7','sus4','sus2','add9','dim7','dim','aug','maj','7','6','9','m'];
+    for (const s of suffixes) {
+        if (name.endsWith(s)) {
+            const base = name.slice(0, -s.length);
+            if (CHORD_NOTES[base]) return CHORD_NOTES[base];
+        }
+    }
+    const root = name.replace(/[^A-G#b].*/, '');
+    return CHORD_NOTES[root] || null;
+}
+
+function triggerDrum(inst, time) {
+    if (state.muted) return;
+    if (inst === 'kick')  drumKick.triggerAttackRelease('C1', '16n', time);
+    if (inst === 'hihat') drumHihat.triggerAttackRelease('32n', time);
+}
+
+let sequence = null;
+
+async function loadDrumData() {
+    const res          = await fetch(`/api/v1/songs/${SONG_SLUG}/drum-pattern`);
+    state.drumData     = await res.json();
+    state.totalBars    = state.drumData.bars_map.length;
+    state.drumLoaded   = true;
+    Tone.getTransport().bpm.value = state.drumData.bpm;
+    const lbl = document.getElementById('drum-bpm');
+    if (lbl) lbl.textContent = state.drumData.bpm + ' BPM';
+}
+
+function resolvePattern() {
+    if (!state.drumData) return null;
+    let offset = 0;
+    for (const hint of state.drumData.drum_hints) {
+        if (state.currentBar >= offset && state.currentBar < offset + hint.bars) {
+            return state.drumData.pattern.patterns[hint.pattern]
+                ?? state.drumData.pattern.patterns.main;
+        }
+        offset += hint.bars;
+    }
+    return state.drumData.pattern.patterns.main;
+}
+
+function buildSequencer() {
+    sequence?.dispose();
+    sequence = new Tone.Sequence((time) => {
+        const pat = resolvePattern();
+        if (pat) {
+            ['kick', 'hihat'].forEach(inst => {
+                if (pat[inst]?.includes(state.currentStep)) triggerDrum(inst, time);
+            });
+        }
+        state.currentStep++;
+        if (state.currentStep >= 16) {
+            state.currentStep = 0;
+            advanceBar();
+        }
+    }, [...Array(16).keys()], '16n');
+}
+
+function activateCard(idx) {
+    const el = document.querySelector(`.bar-card[data-bar-index="${idx}"]`);
+    if (!el) return;
+    el.classList.add('is-active');
+
+    // Rola quando o card entrar na metade inferior do viewport,
+    // posicionando-o no topo — garante que os próximos acordes fiquem visíveis
+    const rect = el.getBoundingClientRect();
+    if (rect.bottom > window.innerHeight * 0.65) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+function deactivateCard(idx) {
+    const el = document.querySelector(`.bar-card[data-bar-index="${idx}"]`);
+    if (el) el.classList.remove('is-active');
+}
+
+function clearAllCards() {
+    document.querySelectorAll('.bar-card.is-active').forEach(el => el.classList.remove('is-active'));
+}
+
+function advanceBar() {
+    deactivateCard(state.currentBar);
+    state.currentBar++;
+    if (state.currentBar >= state.totalBars) state.currentBar = 0;
+    activateCard(state.currentBar);
+    updateProgress();
+    playBarChord(state.currentBar);
+}
+
+function playBarChord(barIndex) {
+    if (state.muted) return;
+    const chordNames = BARS_CHORDS[barIndex];
+    if (!chordNames?.length) return;
+    const barDuration = (60 / state.drumData.bpm) * 4;
+
+    const scheduleChord = (name, duration, offset) => {
+        const notes = resolveChordNotes(name);
+        if (!notes) return;
+        if (offset) {
+            Tone.Transport.scheduleOnce((time) => {
+                if (state.status === 'playing' && !state.muted)
+                    chordSynth.triggerAttackRelease(notes, duration, time);
+            }, `+${offset}`);
+        } else {
+            chordSynth.triggerAttackRelease(notes, duration);
+        }
+    };
+
+    if (chordNames.length >= 2) {
+        const half = barDuration / 2;
+        scheduleChord(chordNames[0], half * 0.85, 0);
+        scheduleChord(chordNames[1], half * 0.85, half);
+    } else {
+        scheduleChord(chordNames[0], barDuration * 0.85, 0);
+    }
+}
+
+function seekToBar(idx) {
+    deactivateCard(state.currentBar);
+    state.currentBar  = idx;
+    state.currentStep = 0;
+    activateCard(state.currentBar);
+    updateProgress();
+}
+
+function updateProgress() {
+    const pct = state.totalBars > 0 ? (state.currentBar / state.totalBars) * 100 : 0;
+    const bar = document.getElementById('drum-progress');
+    if (bar) bar.style.width = pct + '%';
+}
+
+function updateButtons() {
+    const playing = state.status === 'playing';
+    const stopped = state.status === 'stopped';
+    const btnPlay  = document.getElementById('btn-play');
+    const btnPause = document.getElementById('btn-pause');
+    const btnStop  = document.getElementById('btn-stop');
+    const btnMute  = document.getElementById('btn-mute');
+    const bpmLabel = document.getElementById('drum-bpm');
+    btnPlay.disabled  = playing;
+    btnPlay.classList.toggle('is-active', playing);
+    btnPause.disabled = !playing;
+    btnStop.disabled  = stopped;
+    btnMute.disabled  = stopped;
+    btnMute.textContent = state.muted ? '🔇' : '🔊';
+    btnMute.classList.toggle('is-active', state.muted);
+    if (bpmLabel) bpmLabel.classList.toggle('hidden', stopped);
+}
+
+async function playerPlay() {
+    const btnPlay = document.getElementById('btn-play');
+    if (!state.drumLoaded) {
+        btnPlay.disabled = true;
+        await loadDrumData();
+        btnPlay.disabled = false;
+    }
+    await Tone.start();
+    if (state.status === 'paused') {
+        Tone.getTransport().start();
+    } else {
+        buildSequencer();
+        activateCard(state.currentBar);
+        playBarChord(state.currentBar);
+        sequence.start(0);
+        Tone.getTransport().start();
+    }
+    state.status = 'playing';
+    updateButtons();
+}
+
+function playerPause() {
+    if (state.status !== 'playing') return;
+    Tone.getTransport().pause();
+    state.status = 'paused';
+    updateButtons();
+}
+
+function playerStop() {
+    if (state.status === 'stopped') return;
+    sequence?.stop();
+    Tone.getTransport().stop();
+    chordSynth.releaseAll();
+    clearAllCards();
+    state.status      = 'stopped';
+    state.currentBar  = 0;
+    state.currentStep = 0;
+    state.muted       = false;
+    chordSynth.volume.value = -14;
+    updateProgress();
+    updateButtons();
+}
+
+function playerMute() {
+    state.muted = !state.muted;
+    chordSynth.volume.value = state.muted ? -Infinity : -14;
+    updateButtons();
+}
+
+function toggleSetlist(setlistId, btn, settings = {}) {
     const songId = btn.dataset.song;
     fetch(`/caderno/${setlistId}/toggle`, {
         method: 'POST',
@@ -753,17 +1174,25 @@ function toggleSetlist(setlistId, btn) {
                          ?? document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1]?.replace(/%3D/g, '=') ?? '',
             'Accept': 'application/json',
         },
-        body: JSON.stringify({ song_id: songId }),
+        body: JSON.stringify({ song_id: songId, ...settings }),
     })
-    .then(r => r.json())
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(data => {
         if (data.error === 'limit') {
             alert('{{ __("ui.setlist.limit_reached") }}');
             return;
         }
         const svg = btn.querySelector('svg');
-        if (svg) svg.style.color = data.added ? '#FF6D00' : '';
-    });
+        if (svg) svg.style.color = (data.added || data.updated) ? '#FF6D00' : '';
+        const msg  = data.added   ? '{{ __("ui.setlist.song_added") }}'
+                   : data.updated ? '{{ __("ui.setlist.song_updated") }}'
+                   :                '{{ __("ui.setlist.song_removed") }}';
+        const type = data.updated ? 'updated' : (data.added ? 'success' : 'removed');
+        const fire = (win) => win.dispatchEvent(new CustomEvent('show-toast', { detail: { msg, type } }));
+        fire(window);
+        if (window.parent !== window) try { fire(window.parent); } catch(e) {}
+    })
+    .catch(() => {});
 }
 </script>
 @endpush

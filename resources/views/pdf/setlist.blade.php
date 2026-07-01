@@ -281,7 +281,7 @@ body {
                 @foreach($col1 as $entry)
                 @php $s = $entry['song']; @endphp
                 <div class="toc-item">
-                    <span class="toc-key">{{ $s->key ?? '' }}</span>
+                    <span class="toc-key">{{ $entry['key'] ?? '' }}</span>
                     <span class="toc-num">{{ $loop->index + 1 }}.</span>
                     <span class="toc-song">{{ $s->title }}</span>
                     <span class="toc-artist">{{ $s->artist->name }}</span>
@@ -292,7 +292,7 @@ body {
                 @foreach($col2 as $entry)
                 @php $s = $entry['song']; @endphp
                 <div class="toc-item">
-                    <span class="toc-key">{{ $s->key ?? '' }}</span>
+                    <span class="toc-key">{{ $entry['key'] ?? '' }}</span>
                     <span class="toc-num">{{ $half + $loop->index + 1 }}.</span>
                     <span class="toc-song">{{ $s->title }}</span>
                     <span class="toc-artist">{{ $s->artist->name }}</span>
@@ -306,7 +306,7 @@ body {
 
 {{-- ── Páginas das cifras ───────────────────────────────── --}}
 @foreach($songs as $i => $entry)
-@php $song = $entry['song']; $html = $entry['html']; $diagrams = $entry['diagrams']; @endphp
+@php $song = $entry['song']; $html = $entry['html']; $diagrams = $entry['diagrams']; $key = $entry['key']; @endphp
 <div class="song-page">
 
     {{-- Header --}}
@@ -326,8 +326,8 @@ body {
                     {{ implode(' · ', $meta) }}
                 </div>
             </td>
-            @if($song->key)
-            <td class="song-header-key">{{ $song->key }}</td>
+            @if($key)
+            <td class="song-header-key">{{ $key }}</td>
             @endif
         </tr>
     </table>

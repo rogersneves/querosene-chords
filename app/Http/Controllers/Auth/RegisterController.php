@@ -11,8 +11,14 @@ use Illuminate\View\View;
 
 class RegisterController extends Controller
 {
-    public function create(): View
+    public function create(Request $request): View
     {
+        if ($url = $request->query('redirect')) {
+            if (parse_url($url, PHP_URL_HOST) === parse_url(config('app.url'), PHP_URL_HOST)) {
+                redirect()->setIntendedUrl($url);
+            }
+        }
+
         return view('auth.register');
     }
 

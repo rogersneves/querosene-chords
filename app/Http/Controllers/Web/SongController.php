@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
 use App\Models\Song;
+use App\Services\BeginnerModeService;
 use App\Services\ChordProRenderer;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -11,7 +12,7 @@ use Illuminate\View\View;
 
 class SongController extends Controller
 {
-    public function show(Song $song, ChordProRenderer $renderer): View
+    public function show(Song $song, ChordProRenderer $renderer, BeginnerModeService $beginner): View
     {
         abort_unless($song->is_published, 404);
 
@@ -20,7 +21,12 @@ class SongController extends Controller
 
         $content = $song->defaultChord?->content ?? '';
 
-        $html = $content ? $renderer->render($content) : '';
+        $grid = $content ? $renderer->toGrid($content, app()->getLocale()) : [];
+
+        $composer = null;
+        if ($content && preg_match('/\{composer:\s*(.+?)\}/i', $content, $cm)) {
+            $composer = trim($cm[1]);
+        }
 
         $youtubeId    = $song->youtube_id ?? $this->extractYoutubeId($content);
         $youtubeRatio = $youtubeId ? $this->fetchYoutubeRatio($youtubeId) : '16/9';
@@ -36,7 +42,9 @@ class SongController extends Controller
             ->limit(4)
             ->get();
 
-        return view('song.show', compact('song', 'html', 'suggestions', 'youtubeId', 'youtubeRatio'));
+        $simplified = $beginner->analyze($song->chord_list ?? []);
+
+        return view('song.show', compact('song', 'grid', 'composer', 'suggestions', 'youtubeId', 'youtubeRatio', 'simplified'));
     }
 
     private function fetchYoutubeRatio(string $youtubeId): string

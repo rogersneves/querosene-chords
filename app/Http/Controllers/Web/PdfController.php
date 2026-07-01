@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Web;
 use App\Http\Controllers\Controller;
 use App\Models\Setlist;
 use App\Models\Song;
+use App\Services\BeginnerModeService;
 use App\Services\ChordDiagramSvg;
 use App\Services\ChordProRenderer;
 use App\Services\Import\ChordDictionary;
@@ -19,7 +20,7 @@ class PdfController extends Controller
         $chord = $song->defaultChord ?? $song->chords()->first();
         abort_if(!$chord, 404);
 
-        $html     = app(ChordProRenderer::class)->render($chord->content);
+        $html     = app(ChordProRenderer::class)->render($chord->content, app()->getLocale());
         $diagrams = $this->buildDiagrams($song->chord_list ?? []);
 
         $pdf = Pdf::loadView('pdf.song', compact('song', 'html', 'diagrams'))
@@ -35,11 +36,29 @@ class PdfController extends Controller
 
         $setlist->load(['songs.artist', 'songs.category', 'songs.chords']);
 
-        $songs = $setlist->songs->map(function (Song $song) {
-            $chord    = $song->chords->firstWhere('is_default', true) ?? $song->chords->first();
-            $html     = $chord ? app(ChordProRenderer::class)->render($chord->content) : '';
-            $diagrams = $this->buildDiagrams($song->chord_list ?? []);
-            return compact('song', 'html', 'diagrams');
+        $beginner = app(BeginnerModeService::class);
+        $renderer = app(ChordProRenderer::class);
+
+        $songs = $setlist->songs->map(function (Song $song) use ($beginner, $renderer) {
+            $semitones = (int) ($song->pivot->semitones ?? 0);
+            $chord     = $song->chords->firstWhere('is_default', true) ?? $song->chords->first();
+
+            $content = $chord?->content ?? '';
+            if ($semitones !== 0) {
+                $content = $beginner->transposeContent($content, $semitones);
+            }
+
+            $html = $content ? $renderer->render($content, app()->getLocale()) : '';
+
+            $chordList = $song->chord_list ?? [];
+            if ($semitones !== 0) {
+                $chordList = array_map(fn($c) => $beginner->transposeKey($c, $semitones), $chordList);
+            }
+
+            $diagrams = $this->buildDiagrams($chordList);
+            $key      = $song->key ? $beginner->transposeKey($song->key, $semitones) : null;
+
+            return compact('song', 'html', 'diagrams', 'key');
         });
 
         $pdf = Pdf::loadView('pdf.setlist', compact('setlist', 'songs'))
